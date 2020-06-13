@@ -1,13 +1,13 @@
+# Mustard Tools script
+# https://github.com/Mustard2/MustardTools
+
 bl_info = {
     "name": "Mustard Tools",
     "description": "A set of tools for riggers and animators",
     "author": "Mustard",
-    "version": (0, 0, 1),
+    "version": (0, 0, 2),
     "blender": (2, 83, 0),
-    #"location": "Render Settings > Performance",
     "warning": "",
-    #"wiki_url": "https://docs.blender.org/manual/en/dev/addons/"
-    #            "render/auto_tile_size.html",
     "category": "3D View",
 }
 
@@ -40,6 +40,9 @@ class MustardTools_Settings(bpy.types.PropertyGroup):
     ms_debug: bpy.props.BoolProperty(name="Debug mode",
                                         description="Unlock debug mode.\nThis will generate more messaged in the console.\nEnable it only if you encounter problems, as it might degrade general Blender performance",
                                         default=False)
+    ms_naming_prefix: bpy.props.StringProperty(name="",
+                                                default="MustardTools",
+                                                description="Name prefix for the objects created by the addon")
     
     # IK Chain Tool definitions
     # UI definitions
@@ -91,7 +94,6 @@ class MustardTools_Settings(bpy.types.PropertyGroup):
 bpy.utils.register_class(MustardTools_Settings)
 
 bpy.types.Scene.mustardtools_settings = bpy.props.PointerProperty(type=MustardTools_Settings)
-#bpy.context.scene.mustardtools_settings.ik_chain_pole_status = False
 
 # ------------------------------------------------------------------------
 #    IK Chain Tool
@@ -128,11 +130,12 @@ class MUSTARDTOOLS_OT_IKChain(bpy.types.Operator):
 
     def execute(self, context):
         
+        # Import settings
         settings = bpy.context.scene.mustardtools_settings
+        name_prefix = settings.ms_naming_prefix
         
-        # Naming convention
-        IKChain_Controller_Bone_Name = "MustardTools.IK.Controller"
-        IKChain_Constraint_Name = "MustardTools IKChain"
+        IKChainControllerBoneName = name_prefix + ".IK.Controller"
+        IKChainConstraintName = name_prefix + " IKChain"
     
         # Definitions
         arm = bpy.context.object
@@ -167,23 +170,24 @@ class MUSTARDTOOLS_OT_IKChain(bpy.types.Operator):
         else:
             
             chain_last_bone_edit = arm.data.edit_bones[chain_last_bone.name]
-            IK_main_bone_edit = arm.data.edit_bones.new(IKChain_Controller_Bone_Name)
+            IK_main_bone_edit = arm.data.edit_bones.new(IKChainControllerBoneName)
             IK_main_bone_edit.use_deform = False
             IK_main_bone_edit.head = chain_last_bone_edit.tail
             IK_main_bone_edit.tail = 2. * chain_last_bone_edit.tail - chain_last_bone_edit.head
+            IK_main_bone_name = IK_main_bone_edit.name
 
         bpy.ops.object.mode_set(mode='POSE')
         
-        IK_main_bone = arm.pose.bones[IK_main_bone_edit.name]
+        IK_main_bone = arm.pose.bones[IK_main_bone_name]
         IK_main_bone.custom_shape = settings.ik_chain_last_bone_custom_shape
         IK_main_bone.custom_shape_scale = 0.2
         IK_main_bone.use_custom_shape_bone_size = True
 
         IKConstr = chain_last_bone.constraints.new('IK')
-        IKConstr.name = IKChain_Constraint_Name
+        IKConstr.name = IKChainConstraintName
         IKConstr.use_rotation = True
         IKConstr.target = arm
-        IKConstr.subtarget = IK_main_bone_edit.name
+        IKConstr.subtarget = IK_main_bone_name
         IKConstr.chain_count = chain_length
 
         self.report({'INFO'}, 'MustardTools - IK successfully added.')
@@ -245,10 +249,12 @@ class MUSTARDTOOLS_OT_IKChain_Pole(bpy.types.Operator):
 
     def execute(self, context):
         
+        # Import settings
         settings = bpy.context.scene.mustardtools_settings
+        name_prefix = settings.ms_naming_prefix
         
         # Naming convention
-        IKChain_Pole_Bone_Name = "MustardTools.IK.Pole"
+        IKChain_Pole_Bone_Name = name_prefix + ".IK.Pole"
     
         # Definitions
         arm = bpy.context.object
@@ -364,6 +370,7 @@ class MUSTARDTOOLS_OT_IKChain_Clean(bpy.types.Operator):
 
     def execute(self, context):
         
+        # Import settings
         settings = bpy.context.scene.mustardtools_settings
             
         # Definitions
@@ -490,16 +497,17 @@ class MUSTARDTOOLS_OT_IKSpline(bpy.types.Operator):
 
     def execute(self, context):
         
+        # Import settings
         settings = bpy.context.scene.mustardtools_settings
-        
+        name_prefix = settings.ms_naming_prefix
         num = settings.ik_spline_number
         
         # Naming convention
-        IKSpline_Curve_Name = "MustardTools.IKSpline.Curve"
-        IKSpline_Bone_Name = "MustardTools.IKSpline.Bone"
-        IKSpline_Hook_Modifier_Name = "MustardTools.IKSpline.Hook"
-        IKSpline_Empty_Name = "MustardTools.IKSpline.Empty"
-        IKSpline_Constraint_Name = "MustardTools.IKSpline"
+        IKSpline_Curve_Name = name_prefix + ".IKSpline.Curve"
+        IKSpline_Bone_Name = name_prefix + ".IKSpline.Bone"
+        IKSpline_Hook_Modifier_Name = name_prefix + ".IKSpline.Hook"
+        IKSpline_Empty_Name = name_prefix + ".IKSpline.Empty"
+        IKSpline_Constraint_Name = name_prefix + ".IKSpline"
     
         # Definitions
         arm = bpy.context.object
@@ -528,6 +536,7 @@ class MUSTARDTOOLS_OT_IKSpline(bpy.types.Operator):
         polyline.bezier_points.add(num-1)
         
         b = []
+        b_name = []
         
         for i in range(0,num-1):
             x = chain_bones[int(chain_length/(num-1)*i)].head.x
@@ -539,8 +548,13 @@ class MUSTARDTOOLS_OT_IKSpline(bpy.types.Operator):
             
             b.append( arm.data.edit_bones.new(IKSpline_Bone_Name) )
             b[i].use_deform = False
-            b[i].head = 2. * arm.data.edit_bones[int(chain_length/(num-1)*i)].head - arm.data.edit_bones[int(chain_length/(num-1)*i)].tail
-            b[i].tail = arm.data.edit_bones[int(chain_length/(num-1)*i)].head
+            b[i].head = 2. * chain_bones[int(chain_length/(num-1)*i)].head - chain_bones[int(chain_length/(num-1)*i)].tail
+            b[i].tail = chain_bones[int(chain_length/(num-1)*i)].head
+            b_name.append(b[i].name)
+            
+            if settings.ms_debug:
+                print("MustardTools IK Spline - Bone created with head: " + str(b[i].head.x) + " , " + str(b[i].head.y) + " , " + str(b[i].head.z))
+                print("                                       and tail: " + str(b[i].tail.x) + " , " + str(b[i].tail.y) + " , " + str(b[i].tail.z))
         
         i += 1
         x = chain_bones[chain_length-1].head.x
@@ -551,8 +565,13 @@ class MUSTARDTOOLS_OT_IKSpline(bpy.types.Operator):
         polyline.bezier_points[i].handle_left_type = 'VECTOR'
         b.append( arm.data.edit_bones.new(IKSpline_Bone_Name) )
         b[i].use_deform = False
-        b[i].head = arm.data.edit_bones[chain_length-1].head
-        b[i].tail = arm.data.edit_bones[chain_length-1].tail
+        b[i].head = chain_bones[chain_length-1].head
+        b[i].tail = chain_bones[chain_length-1].tail
+        b_name.append(b[i].name)
+        
+        if settings.ms_debug:
+            print("MustardTools IK Spline - Bone created with head: " + str(b[i].head.x) + " , " + str(b[i].head.y) + " , " + str(b[i].head.z))
+            print("                                       and tail: " + str(b[i].tail.x) + " , " + str(b[i].tail.y) + " , " + str(b[i].tail.z))
         
         if settings.ik_spline_bendy:
             for bone in chain_bones:
@@ -566,13 +585,17 @@ class MUSTARDTOOLS_OT_IKSpline(bpy.types.Operator):
         e = []
         for i in range(0,num):
             e.append( bpy.data.objects.new(IKSpline_Empty_Name, None) )
-            e[i].location=polyline.bezier_points[i].co
+            e[i].location=curveData.splines[0].bezier_points[i].co
             e[i].parent = arm
             e[i].parent_type = "BONE"
-            e[i].parent_bone = b[i].name
+            e[i].parent_bone = b_name[i]
             e[i].empty_display_type="SPHERE"
             bpy.context.collection.objects.link(e[i])
-            #e[i].location = (arm.location.x,arm.location.y,arm.location.z)#polyline.bezier_points[0].co
+            #e[i].location = (0,0,0)#(arm.location.x,arm.location.y,arm.location.z)#polyline.bezier_points[0].co
+            e[i].hide_render = True
+            e[i].hide_viewport = True
+            if settings.ms_debug:
+                print("MustardTools IK Spline - Empty created at: " + str(e[i].location.x) + " , " + str(e[i].location.y) + " , " + str(e[i].location.z))
         
         # Create curve object
         curveOB = bpy.data.objects.new(IKSpline_Curve_Name, curveData)
@@ -610,16 +633,11 @@ class MUSTARDTOOLS_OT_IKSpline(bpy.types.Operator):
         IKSplineConstr.xz_scale_mode = "BONE_ORIGINAL"
         
         # Apply custom shape
-        for bone in b:
-            pose_bone = arm.pose.bones[bone.name]
+        for bone in b_name:
+            pose_bone = arm.pose.bones[bone]
             pose_bone.custom_shape = settings.ik_spline_bone_custom_shape
             pose_bone.custom_shape_scale = 0.2
             pose_bone.use_custom_shape_bone_size = True
-        
-        # Final cleanup
-        for i in range(0,num):
-            e[i].hide_render = True
-            e[i].hide_viewport = True
         
         context.view_layer.objects.active = arm
         
@@ -859,9 +877,16 @@ class MUSTARDTOOLS_PT_Settings(MainPanel, bpy.types.Panel):
         settings = bpy.context.scene.mustardtools_settings
         
         box=layout.box()
-        box.label(text="Settings", icon="SETTINGS")
+        box.label(text="Main Settings", icon="SETTINGS")
         box.prop(settings,"ms_advanced")
         box.prop(settings,"ms_debug")
+        
+        box=layout.box()
+        box.label(text="Objects Naming Convention",icon="OUTLINER_OB_FONT")
+        row=box.row()
+        row.label(text="Prefix")
+        row.scale_x = 3.
+        row.prop(settings,"ms_naming_prefix")
 
 # ------------------------------------------------------------------------
 #    Register
