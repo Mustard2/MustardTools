@@ -12,6 +12,8 @@ This is an addon with some tools for riggers and animators. It's still in early 
 - full and only compatibility with Blender 2.83
 
 ## Instructions
+
+- This is an early version! Be sure to make a backup of your work before using this model on it!
 - Install the addon as any other Blender addon (if you don't know how to do it, google it!)
 - Press N in Viewport, and find the "Mustard Tools" tab
 - You can find a very brief video tutorial here:
