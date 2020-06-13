@@ -1,7 +1,3 @@
-# MustardUI script
-# Refer to the documentation to implement this to other models
-# https://github.com/Mustard2/MustardUI/wiki
-
 bl_info = {
     "name": "Mustard Tools",
     "description": "A set of tools for riggers and animators",
