@@ -24,5 +24,3 @@ https://streamable.com/10u6sd
 - When I use the IK Spline, the controllers are generated far from the actual curve.
 When this happens, also a warning message should appear, remembering you to Apply the location to your armature. To do so, go in Object moe, select the Armature and press Ctrl+A. Then choose Location (even if, in general, applying the full LocRotSca is a good practice).
 
-- When I clean up the spline IK, sometime an error message appears.
-I am aware of this problem, and it will be fixed.
