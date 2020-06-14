@@ -5,7 +5,7 @@ bl_info = {
     "name": "Mustard Tools",
     "description": "A set of tools for riggers and animators",
     "author": "Mustard",
-    "version": (0, 0, 2),
+    "version": (0, 0, 3),
     "blender": (2, 83, 0),
     "warning": "",
     "category": "3D View",
@@ -17,6 +17,7 @@ import sys
 import os
 import re
 import time
+import math
 from bpy.props import *
 from mathutils import Vector, Color
 import webbrowser
@@ -26,17 +27,32 @@ import webbrowser
 # ------------------------------------------------------------------------
 
 # Poll functions for properties
-def poll_mesh(self, object):
+def mustardtools_poll_mesh(self, object):
     
     return object.type == 'MESH'
 
+# Function for advanced settings (reset advanced settings if toggled off)
+def mustardtools_ms_advanced_update(self, context):
+    
+    if not self.ms_advanced:
+        
+        settings = bpy.context.scene.mustardtools_settings
+        
+        settings.ik_spline_bone_custom_shape = None
+        settings.ik_spline_first_bone_custom_shape = None
+        settings.ik_spline_resolution = 32
+    
+    return
+        
+# Class with all the settings variables
 class MustardTools_Settings(bpy.types.PropertyGroup):
     
     # Main Settings definitions
     # UI definitions
     ms_advanced: bpy.props.BoolProperty(name="Advanced Options",
                                         description="Unlock advanced options",
-                                        default=False)
+                                        default=False,
+                                        update=mustardtools_ms_advanced_update)
     ms_debug: bpy.props.BoolProperty(name="Debug mode",
                                         description="Unlock debug mode.\nThis will generate more messaged in the console.\nEnable it only if you encounter problems, as it might degrade general Blender performance",
                                         default=False)
@@ -58,11 +74,14 @@ class MustardTools_Settings(bpy.types.PropertyGroup):
     ik_chain_last_bone_custom_shape: bpy.props.PointerProperty(type=bpy.types.Object,
                                                                 name="",
                                                                 description="Object that will be used as custom shape for the IK controller",
-                                                                poll=poll_mesh)
+                                                                poll=mustardtools_poll_mesh)
+    ik_chain_pole_angle: bpy.props.IntProperty(name="Pole Angle",
+                                                    default=90,min=-180,max=180,
+                                                    description="Pole rotation offset.\nChange this value if the rotation of the bones in the result are wrong (usually this is 90 or -90 degrees)")
     ik_chain_pole_bone_custom_shape: bpy.props.PointerProperty(type=bpy.types.Object,
                                                                 name="",
                                                                 description="Object that will be used as custom shape for the IK pole",
-                                                                poll=poll_mesh)
+                                                                poll=mustardtools_poll_mesh)
     
     # Internal definitions (not for UI)
     ik_chain_pole_status: bpy.props.BoolProperty(default=False,
@@ -77,7 +96,7 @@ class MustardTools_Settings(bpy.types.PropertyGroup):
     ik_spline_number: bpy.props.IntProperty(default=3,min=3,max=20,
                                             name="Controllers",
                                             description="Number of IK spline controllers")
-    ik_spline_resolution: bpy.props.IntProperty(default=2,min=1,max=64,
+    ik_spline_resolution: bpy.props.IntProperty(default=32,min=1,max=64,
                                             name="Resolution",
                                             description="Resolution of the spline.\nSubdivision performed on each segment of the curve")
     ik_spline_bendy: bpy.props.BoolProperty(name="Bendy Bones",
@@ -87,9 +106,13 @@ class MustardTools_Settings(bpy.types.PropertyGroup):
                                                     default=2,min=2,max=32,
                                                     description="Number of segments for every bendy bone")
     ik_spline_bone_custom_shape: bpy.props.PointerProperty(type=bpy.types.Object,
-                                                                name="",
-                                                                description="Object that will be used as custom shape for the IK spline controllers",
-                                                                poll=poll_mesh)
+                                                    name="",
+                                                    description="Object that will be used as custom shape for the spline IK bones",
+                                                    poll=mustardtools_poll_mesh)
+    ik_spline_first_bone_custom_shape: bpy.props.PointerProperty(type=bpy.types.Object,
+                                                    name="",
+                                                    description="Object that will be used as custom shape for the spline IK first bone",
+                                                    poll=mustardtools_poll_mesh)
 
 bpy.utils.register_class(MustardTools_Settings)
 
@@ -100,7 +123,7 @@ bpy.types.Scene.mustardtools_settings = bpy.props.PointerProperty(type=MustardTo
 # ------------------------------------------------------------------------
 
 class MUSTARDTOOLS_OT_IKChain(bpy.types.Operator):
-    """This tool will create an IK rig on the selected chain.\nSelect the bones, the last one being the tip of the chain where the controller will be placed"""
+    """This tool will create an IK rig on the selected chain.\nSelect the bones, the last one being the tip of the chain where the controller will be placed.\n\nCondition: select at least 3 bones"""
     bl_idname = "ops.ik_chain"
     bl_label = "Create"
     bl_options = {'REGISTER','UNDO'}
@@ -166,6 +189,7 @@ class MUSTARDTOOLS_OT_IKChain(bpy.types.Operator):
             IK_main_bone_edit.use_deform = False
             chain_last_bone = chain_bones[chain_length-2]
             chain_length = chain_length - 1
+            IK_main_bone_name = IK_main_bone_edit.name
         
         else:
             
@@ -180,7 +204,6 @@ class MUSTARDTOOLS_OT_IKChain(bpy.types.Operator):
         
         IK_main_bone = arm.pose.bones[IK_main_bone_name]
         IK_main_bone.custom_shape = settings.ik_chain_last_bone_custom_shape
-        IK_main_bone.custom_shape_scale = 0.2
         IK_main_bone.use_custom_shape_bone_size = True
 
         IKConstr = chain_last_bone.constraints.new('IK')
@@ -195,7 +218,7 @@ class MUSTARDTOOLS_OT_IKChain(bpy.types.Operator):
         return {'FINISHED'}
 
 class MUSTARDTOOLS_OT_IKChain_Pole(bpy.types.Operator):
-    """This tool will guide you in the creation of a pole for an already available IK rig"""
+    """This tool will guide you in the creation of a pole for an already available IK rig.\nFor a better automatic generation, select the same chain you used to generate the IK Chain rig"""
     bl_idname = "ops.ik_chainpole"
     bl_label = "Add Pole"
     bl_options = {'REGISTER','UNDO'}
@@ -312,7 +335,6 @@ class MUSTARDTOOLS_OT_IKChain_Pole(bpy.types.Operator):
             
             IK_pole_bone = arm.pose.bones[settings.ik_chain_pole_bone]
             IK_pole_bone.custom_shape = settings.ik_chain_pole_bone_custom_shape
-            IK_pole_bone.custom_shape_scale = 0.2
             IK_pole_bone.use_custom_shape_bone_size = True
             
             for constraint in arm.pose.bones[settings.ik_chain_last_bone].constraints:
@@ -322,7 +344,7 @@ class MUSTARDTOOLS_OT_IKChain_Pole(bpy.types.Operator):
             IKConstr.use_rotation = True
             IKConstr.pole_target = arm
             IKConstr.pole_subtarget = settings.ik_chain_pole_bone
-            IKConstr.pole_angle = 3.141593/2.
+            IKConstr.pole_angle = settings.ik_chain_pole_angle * 3.141593/ 180.
             
             settings.ik_chain_pole_status = False
 
@@ -462,7 +484,7 @@ class MUSTARDTOOLS_OT_IKChain_Clean(bpy.types.Operator):
 # ------------------------------------------------------------------------
 
 class MUSTARDTOOLS_OT_IKSpline(bpy.types.Operator):
-    """This tool will create an IK spline on the selected chain.\nSelect the bones, the last one being the tip of the chain"""
+    """This tool will create an IK spline on the selected chain.\nSelect the bones, the last one being the tip of the chain.\n\nConditions:\n    - select at least 4 bones\n    - the number of controllers should be lower than the number of bones - 1"""
     bl_idname = "ops.ik_spline"
     bl_label = "Create"
     bl_options = {'REGISTER','UNDO'}
@@ -480,7 +502,7 @@ class MUSTARDTOOLS_OT_IKSpline(bpy.types.Operator):
             
             if settings.ik_spline_number > len(chain_bones)-1:
                 return False
-            if len(chain_bones) < 2:
+            if len(chain_bones) < 3:
                 return False
             else:
                 abort_aa = False
@@ -515,87 +537,126 @@ class MUSTARDTOOLS_OT_IKSpline(bpy.types.Operator):
         chain_length = len(chain_bones)
         chain_last_bone = chain_bones[chain_length-1]
         
+        # Output a warning if the location has not been applied to the armature
+        warning = 0
         if arm.location.x != 0. or arm.location.y != 0. or arm.location.z != 0.:
             self.report({'WARNING'}, 'MustardTools - The Armature selected seems not to have location applied. This might generate odd results!')
             print("MustardTools IK Spline - Apply the location on the armature with Ctrl+A in Object mode!")
-
+            warning += 1
+        
         if settings.ms_debug:
             print("MustardTools IK Spline - Armature selected: " + bpy.context.object.name)
             print("MustardTools IK Spline - Chain length: " + str(chain_length))
         
+        # Create the curve in Object mode
         bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
         
         curveData = bpy.data.curves.new(IKSpline_Curve_Name, type='CURVE')
         curveData.dimensions = '3D'
-        curveData.resolution_u = settings.ik_spline_resolution
         curveData.use_path = True
         
+        # Create the path for the curve in Edit mode
         bpy.ops.object.mode_set(mode='EDIT', toggle=False)
         
         polyline = curveData.splines.new('BEZIER')
         polyline.bezier_points.add(num-1)
         
+        # Fill the curve with the points, and also create controller bones
         b = []
         b_name = []
         
         for i in range(0,num-1):
-            x = chain_bones[int(chain_length/(num-1)*i)].head.x
-            y = chain_bones[int(chain_length/(num-1)*i)].head.y
-            z = chain_bones[int(chain_length/(num-1)*i)].head.z
+            # Create the point to insert in the curve, at the head of the bone
+            (x,y,z) = (chain_bones[int(chain_length/(num-1)*i)].head.x,
+                        chain_bones[int(chain_length/(num-1)*i)].head.y,
+                        chain_bones[int(chain_length/(num-1)*i)].head.z)
             polyline.bezier_points[i].co = (x, y, z)
-            polyline.bezier_points[i].handle_right_type = 'VECTOR'
-            polyline.bezier_points[i].handle_left_type = 'VECTOR'
+            # Use AUTO to generate handles (should be changed later to ALIGNED to enable rotations)
+            polyline.bezier_points[i].handle_right_type = 'AUTO'
+            polyline.bezier_points[i].handle_left_type = 'AUTO'
             
-            b.append( arm.data.edit_bones.new(IKSpline_Bone_Name) )
-            b[i].use_deform = False
-            b[i].head = 2. * chain_bones[int(chain_length/(num-1)*i)].head - chain_bones[int(chain_length/(num-1)*i)].tail
-            b[i].tail = chain_bones[int(chain_length/(num-1)*i)].head
-            b_name.append(b[i].name)
+            # Create the controller bone
+            b = arm.data.edit_bones.new(IKSpline_Bone_Name)
+            b.use_deform = False
+            b.head = chain_bones[int(chain_length/(num-1)*i)].head
+            b.tail = chain_bones[int(chain_length/(num-1)*i)].tail
+            
+            # Save the name, as changing context will erase the bone data
+            b_name.append(b.name)
             
             if settings.ms_debug:
                 print("MustardTools IK Spline - Bone created with head: " + str(b[i].head.x) + " , " + str(b[i].head.y) + " , " + str(b[i].head.z))
                 print("                                       and tail: " + str(b[i].tail.x) + " , " + str(b[i].tail.y) + " , " + str(b[i].tail.z))
         
+        # The same as above, but for the last bone
         i += 1
-        x = chain_bones[chain_length-1].head.x
-        y = chain_bones[chain_length-1].head.y
-        z = chain_bones[chain_length-1].head.z
+        (x,y,z) = (chain_bones[chain_length-1].head.x,chain_bones[chain_length-1].head.y,chain_bones[chain_length-1].head.z)
+        (x2,y2,z2) = (chain_bones[chain_length-2].head.x,chain_bones[chain_length-2].head.y,chain_bones[chain_length-2].head.z)
         polyline.bezier_points[i].co = (x, y, z)
-        polyline.bezier_points[i].handle_right_type = 'VECTOR'
-        polyline.bezier_points[i].handle_left_type = 'VECTOR'
-        b.append( arm.data.edit_bones.new(IKSpline_Bone_Name) )
-        b[i].use_deform = False
-        b[i].head = chain_bones[chain_length-1].head
-        b[i].tail = chain_bones[chain_length-1].tail
-        b_name.append(b[i].name)
+        polyline.bezier_points[i].handle_right = ( x+(x-x2)/2 , y+(y-y2)/2, z+(z-z2)/2)
+        polyline.bezier_points[i].handle_left = (x2+(x-x2)/2, y2+(y-y2)/2, z2+(z-z2)/2)
+        polyline.bezier_points[i].handle_right_type = 'ALIGNED'
+        polyline.bezier_points[i].handle_left_type = 'ALIGNED'
+        
+        b = arm.data.edit_bones.new(IKSpline_Bone_Name)
+        b.use_deform = False
+        b.head = chain_bones[chain_length-1].head
+        b.tail = chain_bones[chain_length-1].tail
+        b_name.append(b.name)
         
         if settings.ms_debug:
             print("MustardTools IK Spline - Bone created with head: " + str(b[i].head.x) + " , " + str(b[i].head.y) + " , " + str(b[i].head.z))
             print("                                       and tail: " + str(b[i].tail.x) + " , " + str(b[i].tail.y) + " , " + str(b[i].tail.z))
         
+        # Enable bendy bones if the option has been selected
         if settings.ik_spline_bendy:
             for bone in chain_bones:
                 arm.data.edit_bones[bone.name].bbone_segments = settings.ik_spline_bendy_segments
             
+            # Switch to B-Bone view for the Armature bones
             arm.data.display_type = "BBONE"
         
-        bpy.ops.object.mode_set(mode='OBJECT')
+        # GO back to Object mode
+        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
         
         # Create empties
         e = []
         for i in range(0,num):
             e.append( bpy.data.objects.new(IKSpline_Empty_Name, None) )
             e[i].location=curveData.splines[0].bezier_points[i].co
-            e[i].parent = arm
-            e[i].parent_type = "BONE"
-            e[i].parent_bone = b_name[i]
-            e[i].empty_display_type="SPHERE"
+            constraint=e[i].constraints.new('COPY_TRANSFORMS')
+            constraint.target = arm
+            constraint.subtarget = b_name[i]
+            if i == 0:
+                e[i].empty_display_type="SPHERE"
+            else:
+                e[i].empty_display_type="CIRCLE"
             bpy.context.collection.objects.link(e[i])
-            #e[i].location = (0,0,0)#(arm.location.x,arm.location.y,arm.location.z)#polyline.bezier_points[0].co
             e[i].hide_render = True
             e[i].hide_viewport = True
             if settings.ms_debug:
                 print("MustardTools IK Spline - Empty created at: " + str(e[i].location.x) + " , " + str(e[i].location.y) + " , " + str(e[i].location.z))
+            
+        # Set bones custom shape if selected in the options, else use the Empty default shapes
+        if settings.ik_spline_first_bone_custom_shape != None:
+            bone = arm.pose.bones[b_name[0]]
+            bone.custom_shape = settings.ik_spline_first_bone_custom_shape
+            bone.use_custom_shape_bone_size = True
+        else:
+            bone = arm.pose.bones[b_name[0]]
+            bone.custom_shape = e[0]
+            bone.use_custom_shape_bone_size = True
+        
+        if settings.ik_spline_bone_custom_shape != None:
+            for i in range(1,num):
+                bone = arm.pose.bones[b_name[i]]
+                bone.custom_shape = settings.ik_spline_bone_custom_shape
+                bone.use_custom_shape_bone_size = True
+        else:
+            for i in range(1,num):
+                bone = arm.pose.bones[b_name[i]]
+                bone.custom_shape = e[i]
+                bone.use_custom_shape_bone_size = True
         
         # Create curve object
         curveOB = bpy.data.objects.new(IKSpline_Curve_Name, curveData)
@@ -606,11 +667,14 @@ class MUSTARDTOOLS_OT_IKSpline(bpy.types.Operator):
             m.append( curveOB.modifiers.new(IKSpline_Hook_Modifier_Name, 'HOOK') )
             m[i].object = e[i]
         
+        # Link the curve in the scene and use as active object
         bpy.context.collection.objects.link(curveOB)
         context.view_layer.objects.active = curveOB
         
+        # Go in Edit mode
         bpy.ops.object.editmode_toggle()
         
+        # Hook the curve points to the empties
         for i in range(0,num):
             
             select_index = i
@@ -621,8 +685,12 @@ class MUSTARDTOOLS_OT_IKSpline(bpy.types.Operator):
             
             bpy.ops.object.hook_assign(modifier=m[i].name)
             bpy.ops.object.hook_reset(modifier=m[i].name)
+            
+            # Change the handle type to ALIGNED to enable rotations
+            curveData.splines[0].bezier_points[i].handle_right_type = 'ALIGNED'
+            curveData.splines[0].bezier_points[i].handle_left_type = 'ALIGNED'
         
-        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
         
         # Create Spline IK modifier
         IKSplineConstr = chain_last_bone.constraints.new('SPLINE_IK')
@@ -632,21 +700,21 @@ class MUSTARDTOOLS_OT_IKSpline(bpy.types.Operator):
         IKSplineConstr.y_scale_mode = "BONE_ORIGINAL"
         IKSplineConstr.xz_scale_mode = "BONE_ORIGINAL"
         
-        # Apply custom shape
-        for bone in b_name:
-            pose_bone = arm.pose.bones[bone]
-            pose_bone.custom_shape = settings.ik_spline_bone_custom_shape
-            pose_bone.custom_shape_scale = 0.2
-            pose_bone.use_custom_shape_bone_size = True
+        # Final settings cleanup
+        curveData.resolution_u = settings.ik_spline_resolution
         
+        # Go back to pose mode
         context.view_layer.objects.active = arm
-        
         bpy.ops.object.mode_set(mode='POSE')
+        
+        # Final messag, if no warning were raised during the execution
+        if warning == 0:
+            self.report({'INFO'}, 'MustardTools - IK spline rig successfully created.')
         
         return {'FINISHED'}
     
 class MUSTARDTOOLS_OT_IKSpline_Clean(bpy.types.Operator):
-    """This tool will remove the IK spline"""
+    """This tool will remove the IK spline.\nSelect a bone with an IK constraint to enable the tool.\nA confirmation box will appear"""
     bl_idname = "ops.ik_splineclean"
     bl_label = "Clean"
     bl_options = {'REGISTER','UNDO'}
@@ -709,8 +777,7 @@ class MUSTARDTOOLS_OT_IKSpline_Clean(bpy.types.Operator):
         for bone in chain_bones:
             for constraint in bone.constraints:
                 if constraint.type == 'SPLINE_IK':
-                    if self.delete_bones:
-                        
+                    
                         bpy.ops.object.mode_set(mode='EDIT', toggle=False)
                         
                         if constraint.target != None:
@@ -719,38 +786,42 @@ class MUSTARDTOOLS_OT_IKSpline_Clean(bpy.types.Operator):
                                 if hook_mod.object != None:
                                     
                                     IKEmpty = hook_mod.object
-                                    e.append(IKEmpty)
+                                    e.append(IKEmpty.name)
                                     
-                                    if IKEmpty.parent_type == "BONE" and IKEmpty.parent != None and IKEmpty.parent_bone != None and IKEmpty.parent_bone != "":
-                                        IKArm = IKEmpty.parent
-                                        IKBone = IKArm.data.edit_bones[IKEmpty.parent_bone]
-                                        IKBone_name = IKBone.name
-                                        IKArm.data.edit_bones.remove(IKBone)
-                                        if settings.ms_debug:
-                                            print("MustardTools IK Spline - Bone " + IKBone_name + " removed from Armature " + IKArm.name)
-                                        removed_bones = removed_bones + 1
+                                    if self.delete_bones:
+                                        for e_constraint in IKEmpty.constraints:
+                                            if e_constraint.type=="COPY_TRANSFORMS":
+                                                if e_constraint.target != None and e_constraint.subtarget != None and e_constraint.subtarget != "":
+                                                    IKArm = e_constraint.target
+                                                    IKBone = IKArm.data.edit_bones[e_constraint.subtarget]
+                                                    IKBone_name = IKBone.name
+                                                    IKArm.data.edit_bones.remove(IKBone)
+                                                    if settings.ms_debug:
+                                                        print("MustardTools IK Spline - Bone " + IKBone_name + " removed from Armature " + IKArm.name)
+                                                    removed_bones = removed_bones + 1
                                     
-                    bpy.ops.object.mode_set(mode='OBJECT')
-                    bpy.ops.object.select_all(action='DESELECT')
-                    for empty in e:
-                        bpy.context.collection.objects.unlink(empty)
-                        bpy.data.objects.remove(empty)
+                        bpy.ops.object.mode_set(mode='OBJECT')
+                        bpy.ops.object.select_all(action='DESELECT')
+                        for empty_name in e:
+                            empty = bpy.data.objects[empty_name]
+                            bpy.context.collection.objects.unlink(empty)
+                            bpy.data.objects.remove(empty)
                     
-                    bpy.ops.object.select_all(action='DESELECT')
-                    IKCurve = constraint.target
-                    IKCurve_name = IKCurve.name
-                    bpy.context.collection.objects.unlink(IKCurve)
-                    bpy.data.objects.remove(IKCurve)
-                    if settings.ms_debug:
-                        print("MustardTools IK Spline - Curve " + IKCurve_name + " removed.")
+                        bpy.ops.object.select_all(action='DESELECT')
+                        IKCurve = constraint.target
+                        IKCurve_name = IKCurve.name
+                        bpy.context.collection.objects.unlink(IKCurve)
+                        bpy.data.objects.remove(IKCurve)
+                        if settings.ms_debug:
+                            print("MustardTools IK Spline - Curve " + IKCurve_name + " removed.")
                         
-                    bpy.ops.object.mode_set(mode='POSE')
+                        bpy.ops.object.mode_set(mode='POSE')
                     
-                    IKConstr_name = constraint.name
-                    bone.constraints.remove(constraint)
-                    removed_constr = removed_constr + 1
-                    if settings.ms_debug:
-                        print("MustardTools IK Spline - Constraint " + IKConstr_name + " removed from " + bone.name + ".")
+                        IKConstr_name = constraint.name
+                        bone.constraints.remove(constraint)
+                        removed_constr = removed_constr + 1
+                        if settings.ms_debug:
+                            print("MustardTools IK Spline - Constraint " + IKConstr_name + " removed from " + bone.name + ".")
         
         if self.delete_bones:
             self.report({'INFO'}, 'MustardTools - '+ str(removed_constr) +' IK constraints and '+ str(removed_bones) +' Bones successfully removed.')
@@ -800,7 +871,6 @@ class MainPanel:
 class MUSTARDTOOLS_PT_IKChain(MainPanel, bpy.types.Panel):
     bl_idname = "MUSTARDTOOLS_PT_IKChain"
     bl_label = "IK Chain"
-    bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context):
         
@@ -822,6 +892,7 @@ class MUSTARDTOOLS_PT_IKChain(MainPanel, bpy.types.Panel):
         layout.operator('ops.ik_chain', icon="ADD")
         box=layout.box()
         box.label(text="Pole settings", icon="SHADING_WIRE")
+        box.prop(settings,"ik_chain_pole_angle")
         row=box.row()
         row.label(text="Shape")
         row.scale_x = 3.
@@ -839,7 +910,6 @@ class MUSTARDTOOLS_PT_IKChain(MainPanel, bpy.types.Panel):
 class MUSTARDTOOLS_PT_IKSpline(MainPanel, bpy.types.Panel):
     bl_idname = "MUSTARDTOOLS_PT_IKSpline"
     bl_label = "IK Spline"
-    bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context):
         
@@ -856,10 +926,16 @@ class MUSTARDTOOLS_PT_IKSpline(MainPanel, bpy.types.Panel):
         if not settings.ik_spline_bendy:
             col.enabled=False
         col.prop(settings,"ik_spline_bendy_segments")
-        row=box.row()
-        row.label(text="Shape")
-        row.scale_x = 3.
-        row.prop(settings,"ik_spline_bone_custom_shape")
+        if settings.ms_advanced:
+            box.label(text="Bone Custom Shapes", icon="SHADING_WIRE")
+            row=box.row()
+            row.label(text="First")
+            row.scale_x = 3.
+            row.prop(settings,"ik_spline_first_bone_custom_shape")
+            row=box.row()
+            row.label(text="Others")
+            row.scale_x = 3.
+            row.prop(settings,"ik_spline_bone_custom_shape")
         
         layout.operator('ops.ik_spline', icon="ADD")
         
