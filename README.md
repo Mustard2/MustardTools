@@ -9,6 +9,8 @@ This is an addon with some tools for riggers and animators. It's still in early 
 - IK constraint generation for bone chains (with possible automatic creation of controller and pole bones)
 - IK Spline rig generation for bone chains
 - possibility to add bendy bones for both functions above
+- Keyframes Slide function, to scale a specific set of bones and move the other keyframes preserving their distance
+- additional tools (OptiX Compatibility)
 - full and only compatibility with Blender 2.83
 
 ## Instructions
