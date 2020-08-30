@@ -5,8 +5,8 @@ bl_info = {
     "name": "Mustard Tools",
     "description": "A set of tools for riggers and animators",
     "author": "Mustard",
-    "version": (0, 0, 3),
-    "blender": (2, 83, 0),
+    "version": (0, 1, 0),
+    "blender": (2, 83, 5),
     "warning": "",
     "category": "3D View",
 }
@@ -113,6 +113,15 @@ class MustardTools_Settings(bpy.types.PropertyGroup):
                                                     name="",
                                                     description="Object that will be used as custom shape for the spline IK first bone",
                                                     poll=mustardtools_poll_mesh)
+    
+    # Slide Keyframes Tool definitions
+    # UI definitions
+    slide_keyframes_application: bpy.props.EnumProperty(name = "",
+                                                        description = "Which object's keyframes are considered by the Slide Keyframes tool",
+                                                            items = [('0','Active','Consider the active object only'), 
+                                                                    ('1','Selected','Consider all the selected objects'),
+                                                                    ('2','All','Consider all objects in the scene')],
+                                                            default = '0')
 
 bpy.utils.register_class(MustardTools_Settings)
 
@@ -124,7 +133,7 @@ bpy.types.Scene.mustardtools_settings = bpy.props.PointerProperty(type=MustardTo
 
 class MUSTARDTOOLS_OT_IKChain(bpy.types.Operator):
     """This tool will create an IK rig on the selected chain.\nSelect the bones, the last one being the tip of the chain where the controller will be placed.\n\nCondition: select at least 3 bones"""
-    bl_idname = "ops.ik_chain"
+    bl_idname = "mustardui.ik_chain"
     bl_label = "Create"
     bl_options = {'REGISTER','UNDO'}
     
@@ -219,7 +228,7 @@ class MUSTARDTOOLS_OT_IKChain(bpy.types.Operator):
 
 class MUSTARDTOOLS_OT_IKChain_Pole(bpy.types.Operator):
     """This tool will guide you in the creation of a pole for an already available IK rig.\nFor a better automatic generation, select the same chain you used to generate the IK Chain rig"""
-    bl_idname = "ops.ik_chainpole"
+    bl_idname = "mustardui.ik_chainpole"
     bl_label = "Add Pole"
     bl_options = {'REGISTER','UNDO'}
     
@@ -354,7 +363,7 @@ class MUSTARDTOOLS_OT_IKChain_Pole(bpy.types.Operator):
 
 class MUSTARDTOOLS_OT_IKChain_Clean(bpy.types.Operator):
     """This tool will clean the available IK constraints in the selected bones.\nSelect a bone with an IK constraint to enable the tool.\nA confirmation box will appear"""
-    bl_idname = "ops.ik_chainclean"
+    bl_idname = "mustardui.ik_chainclean"
     bl_label = "Remove IK"
     bl_options = {'REGISTER','UNDO'}
     
@@ -485,7 +494,7 @@ class MUSTARDTOOLS_OT_IKChain_Clean(bpy.types.Operator):
 
 class MUSTARDTOOLS_OT_IKSpline(bpy.types.Operator):
     """This tool will create an IK spline on the selected chain.\nSelect the bones, the last one being the tip of the chain.\n\nConditions:\n    - select at least 4 bones\n    - the number of controllers should be lower than the number of bones - 1"""
-    bl_idname = "ops.ik_spline"
+    bl_idname = "mustardui.ik_spline"
     bl_label = "Create"
     bl_options = {'REGISTER','UNDO'}
     
@@ -715,7 +724,7 @@ class MUSTARDTOOLS_OT_IKSpline(bpy.types.Operator):
     
 class MUSTARDTOOLS_OT_IKSpline_Clean(bpy.types.Operator):
     """This tool will remove the IK spline.\nSelect a bone with an IK constraint to enable the tool.\nA confirmation box will appear"""
-    bl_idname = "ops.ik_splineclean"
+    bl_idname = "mustardui.ik_splineclean"
     bl_label = "Clean"
     bl_options = {'REGISTER','UNDO'}
     
@@ -858,6 +867,318 @@ class MUSTARDTOOLS_OT_IKSpline_Clean(bpy.types.Operator):
         box.label(text="        - " + str(IK_num_nMUI) + " of which are not Mustard Tools generated.")
 
 # ------------------------------------------------------------------------
+#    Slide Keyframes
+# ------------------------------------------------------------------------
+#
+# Slide Keyframes tool (thanks to @KDE for the idea)
+#
+# Consider the following keyframes configuration
+# A ----- B ------ C ------ D ----- E
+# Suppose I want to scale B ------ C,
+# but I want to keep the relationship from C to D as 6 frames.
+# Scaling B -> C in Blender would result in:
+# A ------ B ------------ D --- C --- E
+# This tool will scale from B to C and preserve the relations between the remaining keyframes: 
+# A ------ B --------------- C ------ D ------ E
+
+class MUSTARDTOOLS_OT_SlideKeyframes(bpy.types.Operator):
+    
+    """Tool to scale keyframes, sliding the others accordingly"""
+    bl_idname = "mustardui.anim_slidekeyframes"
+    bl_label = "Slide Keyframes"
+    bl_options = {'REGISTER','UNDO','GRAB_CURSOR','BLOCKING'}
+    
+    @classmethod
+    def poll(cls, context):
+        
+        settings = bpy.context.scene.mustardtools_settings
+        
+        if settings.slide_keyframes_application == '0':
+        
+            obj = bpy.context.active_object
+        
+            if context.active_object == None:
+                if settings.ms_debug:
+                    print("MustardTools Slide Keyframes - No object selected")
+                return False
+        
+            try:
+                action = obj.animation_data.action
+                
+                check = False
+                check_value = 0
+                    
+                for fcurve in action.fcurves:
+                    for p in fcurve.keyframe_points:
+                        if p.select_control_point:
+                            if check_value == 0:
+                                check_value = p.co[0]
+                                continue
+                            else:
+                                if p.co[0] != check_value:
+                                    check = True
+                                    break
+                
+                if not check and settings.ms_debug:
+                    print("MustardTools Slide Keyframes - The keyframe should belong to the object selected")
+                    
+                return check
+                
+            except:
+                if settings.ms_debug:
+                    print("MustardTools Slide Keyframes - No keyframes found on the object")
+                return False
+        
+        elif settings.slide_keyframes_application == '1':
+            
+            objs = bpy.context.selected_objects
+            
+            if objs == []:
+                if settings.ms_debug:
+                    print("MustardTools Slide Keyframes - No object selected")
+                return False
+            
+            check = False
+            check_value = 0
+            
+            for obj in objs:
+                
+                try:
+                    action = obj.animation_data.action
+                    
+                    for fcurve in action.fcurves:
+                        for p in fcurve.keyframe_points:
+                            if p.select_control_point:
+                                if check_value == 0:
+                                    check_value = p.co[0]
+                                    continue
+                                else:
+                                    if p.co[0] != check_value:
+                                        check = True
+                                        break
+                    
+                except:
+                    if settings.ms_debug:
+                        print("MustardTools Slide Keyframes - Object "+obj.name+" neglected. No keyframes found")
+            
+            return check
+        
+        elif settings.slide_keyframes_application == '2':
+            
+            objs = bpy.data.objects
+            
+            if objs == []:
+                if settings.ms_debug:
+                    print("MustardTools Slide Keyframes - No object in the scene")
+                return False
+            
+            for obj in objs:
+                
+                try:
+                    action = obj.animation_data.action
+                    
+                    check = False
+                    
+                    for fcurve in action.fcurves:
+                        for p in fcurve.keyframe_points:
+                            if p.select_control_point:
+                                check = True
+                                break
+                    
+                    return check
+                    
+                except:
+                    if settings.ms_debug:
+                        print("MustardTools Slide Keyframes - Object "+obj.name+" neglected. No keyframes found")
+        
+        return True
+    
+    def execute(self, context):
+        
+        settings = bpy.context.scene.mustardtools_settings
+        
+        if settings.slide_keyframes_application == '0':
+
+            obj = bpy.context.active_object
+            action = obj.animation_data.action
+        
+            self.action_end_scaled = self.value / 10.
+
+            for fcurve in action.fcurves:
+                for p in fcurve.keyframe_points:
+                    if p.co[0]>self.action_end:
+                        p.co[0] = p.co[0] + (self.action_end_scaled - self.action_end)
+            
+            if self.action_end - self.action_start > 0:
+                scale_factor = (self.action_end_scaled - self.action_end) / (self.action_end - self.action_start)
+                
+                for fcurve in action.fcurves:
+                    for p in fcurve.keyframe_points:
+                        if p.co[0]>=self.action_start and p.co[0]<=self.action_end:
+                            p.co[0] = p.co[0] + (p.co[0] - self.action_start) * scale_factor
+            else:
+                self.error = True
+            
+            self.action_end = self.action_end_scaled
+        
+        else:
+        
+            if settings.slide_keyframes_application == '1':
+                objs = bpy.context.selected_objects
+            else:
+                objs = bpy.data.objects
+            
+            self.action_end_scaled = self.value / 10.
+            
+            for obj in objs:
+                
+                try:
+                    action = obj.animation_data.action
+
+                    for fcurve in action.fcurves:
+                        for p in fcurve.keyframe_points:
+                            if p.co[0]>self.action_end:
+                                p.co[0] = p.co[0] + (self.action_end_scaled - self.action_end)
+            
+                    if self.action_end - self.action_start > 0:
+                        scale_factor = (self.action_end_scaled - self.action_end) / (self.action_end - self.action_start)
+                
+                        for fcurve in action.fcurves:
+                            for p in fcurve.keyframe_points:
+                                if p.co[0]>=self.action_start and p.co[0]<=self.action_end:
+                                    p.co[0] = p.co[0] + (p.co[0] - self.action_start) * scale_factor
+                    else:
+                        self.error = True
+                        break
+                
+                except:
+                    continue
+            
+            self.action_end = self.action_end_scaled
+        
+        return {'FINISHED'}
+    
+    def modal(self, context, event):
+        
+        settings = bpy.context.scene.mustardtools_settings
+        
+        if self.error:
+            self.report({'ERROR'}, 'MustardTools - Cannot slide those keyframes. Undo and retry.')
+            return {'CANCELLED'}
+        
+        if event.type == 'MOUSEMOVE':  # Apply
+            if (event.mouse_prev_x != event.mouse_x):
+                self.value = event.mouse_region_x
+                self.execute(context)
+        
+        elif event.type == 'LEFTMOUSE':  # Confirm
+            self.report({'INFO'}, 'MustardTools - Slide complete.')
+            if settings.ms_debug:
+                scale_factor = 1. + (self.action_end_scaled - self.init_action_end) / (self.init_action_end - self.action_start)
+                print("MustardTools Slide Keyframes - Scaling with factor " + str(scale_factor))
+            return {'FINISHED'}
+        
+        elif event.type in {'RIGHTMOUSE', 'ESC'}:  # Cancel
+            self.report({'INFO'}, 'MustardTools - Undo to cancel.')   
+            return {'CANCELLED'}
+
+        return {'RUNNING_MODAL'}
+    
+    def invoke(self, context, event):
+        
+        settings = bpy.context.scene.mustardtools_settings
+        
+        self.error = False
+        
+        self.action_start = 1048574
+        self.action_end = - 1048574
+        
+        if settings.slide_keyframes_application == '0':
+        
+            obj = bpy.context.active_object
+            action = obj.animation_data.action
+            
+            for fcurve in action.fcurves:
+                for p in fcurve.keyframe_points:
+                    if p.select_control_point and self.action_start > p.co[0]:
+                        self.action_start = p.co[0]
+                    if p.select_control_point and self.action_end < p.co[0]:
+                        self.action_end = p.co[0]
+            if settings.ms_debug:
+                print("MustardTools Slide Keyframes - Starting point found at " + str(self.action_start))
+                print("MustardTools Slide Keyframes - Ending point found at " + str(self.action_start))
+            
+            self.init_action_end = self.action_end
+            
+            self.action_end_scaled = self.action_end
+        
+        else:
+        
+            if settings.slide_keyframes_application == '1':
+                objs = bpy.context.selected_objects
+            else:
+                objs = bpy.data.objects
+            
+            for obj in objs:
+                
+                try:
+                    action = obj.animation_data.action
+                    
+                    for fcurve in action.fcurves:
+                        for p in fcurve.keyframe_points:
+                            if p.select_control_point and self.action_start > p.co[0]:
+                                self.action_start = p.co[0]
+                            if p.select_control_point and self.action_end < p.co[0]:
+                                self.action_end = p.co[0]
+                    if settings.ms_debug:
+                        print("MustardTools Slide Keyframes - Starting point found at " + str(self.action_start))
+                        print("MustardTools Slide Keyframes - Ending point found at " + str(self.action_start))
+                    
+                    self.init_action_end = self.action_end
+                    
+                    self.action_end_scaled = self.action_end
+                
+                except:
+                    if settings.ms_debug:
+                        print("MustardTools Slide Keyframes - Object "+obj.name+" neglected. No keyframes found")
+        
+        self.value = event.mouse_region_x
+        self.execute(context)
+
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+    
+    def draw(self, context):
+        self.layout.operator("message.messagebox", text = "message").message = 'Sample Text'
+
+# ------------------------------------------------------------------------
+#    OptiX compatibility
+# ------------------------------------------------------------------------
+
+class MUSTARDTOOLS_OT_OptiXCompatibility(bpy.types.Operator):
+    
+    """Tool to optimize the materials for OptiX renderings. The tool is non-destructive, you can revert the changes with the button in the UI"""
+    bl_idname = "mustardui.optix_compatibility"
+    bl_label = "OptiX Compatibility"
+    bl_options = {'REGISTER','UNDO'}
+    
+    revert: BoolProperty(name='Revert',
+        description="Revert restoring previous options",
+        default=False
+    )
+    
+    def execute(self, context):
+        
+        for mat in bpy.data.materials:
+            if mat.use_nodes:
+                nodes = mat.node_tree.nodes
+                for node in nodes:
+                    if isinstance(node, bpy.types.ShaderNodeAmbientOcclusion):
+                        node.mute = not self.revert
+            
+        return {'FINISHED'}
+
+# ------------------------------------------------------------------------
 #    UI
 # ------------------------------------------------------------------------
 
@@ -889,7 +1210,7 @@ class MUSTARDTOOLS_PT_IKChain(MainPanel, bpy.types.Panel):
         row.label(text="Shape")
         row.scale_x = 3.
         row.prop(settings,"ik_chain_last_bone_custom_shape")
-        layout.operator('ops.ik_chain', icon="ADD")
+        layout.operator('mustardui.ik_chain', icon="ADD")
         box=layout.box()
         box.label(text="Pole settings", icon="SHADING_WIRE")
         box.prop(settings,"ik_chain_pole_angle")
@@ -898,14 +1219,14 @@ class MUSTARDTOOLS_PT_IKChain(MainPanel, bpy.types.Panel):
         row.scale_x = 3.
         row.prop(settings,"ik_chain_pole_bone_custom_shape")
         if not settings.ik_chain_pole_status:
-            layout.operator('ops.ik_chainpole', icon="ADD").status = True
+            layout.operator('mustardui.ik_chainpole', icon="ADD").status = True
         else:
             row=box.row(align=True)
-            row.operator('ops.ik_chainpole', text="Confirm", icon = "CHECKMARK", depress = True).status = False
+            row.operator('mustardui.ik_chainpole', text="Confirm", icon = "CHECKMARK", depress = True).status = False
             row.scale_x=1.
-            row.operator('ops.ik_chainpole', text="", icon = "X").cancel = True
+            row.operator('mustardui.ik_chainpole', text="", icon = "X").cancel = True
         layout.separator()
-        layout.operator('ops.ik_chainclean', icon="CANCEL")
+        layout.operator('mustardui.ik_chainclean', icon="CANCEL")
 
 class MUSTARDTOOLS_PT_IKSpline(MainPanel, bpy.types.Panel):
     bl_idname = "MUSTARDTOOLS_PT_IKSpline"
@@ -937,10 +1258,25 @@ class MUSTARDTOOLS_PT_IKSpline(MainPanel, bpy.types.Panel):
             row.scale_x = 3.
             row.prop(settings,"ik_spline_bone_custom_shape")
         
-        layout.operator('ops.ik_spline', icon="ADD")
+        layout.operator('mustardui.ik_spline', icon="ADD")
         
         layout.separator()
-        layout.operator('ops.ik_splineclean', icon="CANCEL")
+        layout.operator('mustardui.ik_splineclean', icon="CANCEL")
+
+class MUSTARDTOOLS_PT_VariousTools(MainPanel, bpy.types.Panel):
+    bl_idname = "MUSTARDTOOLS_PT_VariousTools"
+    bl_label = "Additional Tools"
+    bl_options = {"DEFAULT_CLOSED"}
+    
+    def draw(self, context):
+        
+        layout = self.layout
+        settings = bpy.context.scene.mustardtools_settings
+        
+        box=layout.box()
+        row=box.row(align = True)
+        row.operator('mustardui.optix_compatibility', icon="MATERIAL")
+        row.operator('mustardui.optix_compatibility', icon="DECORATE_OVERRIDE", text="").revert = True
 
 class MUSTARDTOOLS_PT_Settings(MainPanel, bpy.types.Panel):
     bl_idname = "MUSTARDTOOLS_PT_Settings"
@@ -958,10 +1294,17 @@ class MUSTARDTOOLS_PT_Settings(MainPanel, bpy.types.Panel):
         box.prop(settings,"ms_debug")
         
         box=layout.box()
+        box.label(text="Slide Keyframes Settings", icon="SETTINGS")
+        row=box.row()
+        row.label(text="Application")
+        row.scale_x = 2.
+        row.prop(settings,"slide_keyframes_application")
+        
+        box=layout.box()
         box.label(text="Objects Naming Convention",icon="OUTLINER_OB_FONT")
         row=box.row()
         row.label(text="Prefix")
-        row.scale_x = 3.
+        row.scale_x = 2.
         row.prop(settings,"ms_naming_prefix")
 
 # ------------------------------------------------------------------------
@@ -976,20 +1319,34 @@ classes = (
     MUSTARDTOOLS_OT_IKSpline,
     MUSTARDTOOLS_OT_IKSpline_Clean,
     MUSTARDTOOLS_PT_IKSpline,
+    MUSTARDTOOLS_OT_SlideKeyframes,
+    MUSTARDTOOLS_OT_OptiXCompatibility,
+    MUSTARDTOOLS_PT_VariousTools,
     MUSTARDTOOLS_PT_Settings
 )
+
+addon_keymaps = []
 
 def register():
     
     from bpy.utils import register_class
     for cls in classes:
         register_class(cls)
+        
+    wm = bpy.context.window_manager ### register the keymap
+    km = wm.keyconfigs.addon.keymaps.new(name='Dopesheet', space_type='DOPESHEET_EDITOR')
+    kmi = km.keymap_items.new(MUSTARDTOOLS_OT_SlideKeyframes.bl_idname, 'S', 'PRESS', shift=True, ctrl=False, alt=True)
+    addon_keymaps.append((km, kmi))
 
 def unregister():
     
     from bpy.utils import unregister_class
     for cls in reversed(classes):
         unregister_class(cls)
+    
+    for km, kmi in addon_keymaps:
+        km.keymap_items.remove(kmi)
+    addon_keymaps.clear()
 
 if __name__ == "__main__":
     register()
