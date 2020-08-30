@@ -1175,8 +1175,24 @@ class MUSTARDTOOLS_OT_OptiXCompatibility(bpy.types.Operator):
                 for node in nodes:
                     if isinstance(node, bpy.types.ShaderNodeAmbientOcclusion):
                         node.mute = not self.revert
+                    elif isinstance(node, bpy.types.ShaderNodeBevel):
+                        node.mute = not self.revert
             
         return {'FINISHED'}
+    
+    def draw(self, context):
+        
+        layout = self.layout
+        
+        box = layout.box()
+        if self.revert:
+            box.label(text="This tool is:", icon="ERROR")
+            box.label(text="        - Enabling AO nodes from all materials.")
+            box.label(text="        - Enabling Bevel nodes from all materials.")
+        else:
+            box.label(text="This tool is:", icon="ERROR")
+            box.label(text="        - Muting AO nodes from all materials.")
+            box.label(text="        - Muting Bevel nodes from all materials.")
 
 # ------------------------------------------------------------------------
 #    UI
@@ -1275,7 +1291,7 @@ class MUSTARDTOOLS_PT_VariousTools(MainPanel, bpy.types.Panel):
         
         box=layout.box()
         row=box.row(align = True)
-        row.operator('mustardui.optix_compatibility', icon="MATERIAL")
+        row.operator('mustardui.optix_compatibility', icon="MATERIAL").revert = False
         row.operator('mustardui.optix_compatibility', icon="DECORATE_OVERRIDE", text="").revert = True
 
 class MUSTARDTOOLS_PT_Settings(MainPanel, bpy.types.Panel):
