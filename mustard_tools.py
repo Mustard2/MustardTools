@@ -5,8 +5,8 @@ bl_info = {
     "name": "Mustard Tools",
     "description": "A set of tools for riggers and animators",
     "author": "Mustard",
-    "version": (0, 1, 0),
-    "blender": (2, 83, 5),
+    "version": (0, 2, 0),
+    "blender": (2, 90, 1),
     "warning": "",
     "category": "3D View",
 }
@@ -30,6 +30,10 @@ import webbrowser
 def mustardtools_poll_mesh(self, object):
     
     return object.type == 'MESH'
+
+def mustardtools_poll_armature(self, object):
+    
+    return object.type == 'ARMATURE'
 
 # Function for advanced settings (reset advanced settings if toggled off)
 def mustardtools_ms_advanced_update(self, context):
@@ -113,6 +117,70 @@ class MustardTools_Settings(bpy.types.PropertyGroup):
                                                     name="",
                                                     description="Object that will be used as custom shape for the spline IK first bone",
                                                     poll=mustardtools_poll_mesh)
+    
+    # Mouth Controller Tool definitions
+    # UI definitions
+    mouth_controller_mirror: bpy.props.BoolProperty(name="Mirror",
+                                                    description="Use this option if the bones are named with the .r and .l naming convention for right and left")
+    mouth_controller_number_bones: bpy.props.IntProperty(default=2, min=1, max=2, name="Number of central bones")
+    mouth_controller_edge_bone_correction_x: bpy.props.FloatProperty(default=1.0,
+                                                            name="Edge bones correction (x axis)",
+                                                            description="The default value can not be changed")
+    mouth_controller_edge_bone_correction_z: bpy.props.FloatProperty(default=0.1,
+                                                            name="Edge bones correction (z axis)",
+                                                            description="This value is the ratio between the movement of the edge bones and the center bones on the z axis (back and forth movement of the controller bone)")
+    mouth_controller_middle1_bone_correction_x: bpy.props.FloatProperty(default=0.2,
+                                                            name="Middle bones 1 correction (x axis)",
+                                                            description="This value is the ratio between the movement of the middle bones and the edge bones on the x axis (left and right movement of the controller bone)")
+    mouth_controller_middle1_bone_correction_z: bpy.props.FloatProperty(default=1.,
+                                                            name="Middle bones 1 correction (z axis)",
+                                                            description="This value is the ratio between the movement of the middle bones and the center bones on the x axis (back and forth movement of the controller bone)")
+    mouth_controller_middle2_bone_correction_x: bpy.props.FloatProperty(default=0.5,
+                                                            name="Middle bones 2 correction (x axis)",
+                                                            description="This value is the ratio between the movement of the middle bones and the edge bones on the x axis (left and right movement of the controller bone)")
+    mouth_controller_middle2_bone_correction_z: bpy.props.FloatProperty(default=1.,
+                                                            name="Middle bones 2 correction (z axis)",
+                                                            description="This value is the ratio between the movement of the middle bones and the center bones on the x axis (back and forth movement of the controller bone)")
+    mouth_controller_center_bone_correction_x: bpy.props.FloatProperty(default=1.,
+                                                            name="Center bones correction (x axis)",
+                                                            description="The default value can not be changed")
+    mouth_controller_center_bone_correction_z: bpy.props.FloatProperty(default=1.,
+                                                            name="Middle bones 2 correction (z axis)",
+                                                            description="This value is the ratio between the movement of the middle bones and the center bones on the x axis (back and forth movement of the controller bone)")
+    mouth_controller_floor_offset: bpy.props.FloatProperty(default=0.006,
+                                                            name="Upper bone floor distance",
+                                                            description="The minimum distance between the upper and the bottom mouth bones")
+    mouth_controller_transform_ratio: bpy.props.FloatProperty(default=0.1,
+                                                            name="Bones transformation value",
+                                                            description="The value with which the bones are affected by the movement of the controller")
+    
+    mouth_controller_armature_controller: bpy.props.PointerProperty(type=bpy.types.Object,
+                                                    name="Armature controller",
+                                                    description="Armature",
+                                                    poll=mustardtools_poll_armature)
+    mouth_controller_bone: bpy.props.StringProperty(name="Controller Bone")
+    mouth_controller_bone_custom_shape: bpy.props.PointerProperty(type=bpy.types.Object,
+                                                                name="",
+                                                                description="Object that will be used as custom shape for the mouth controller",
+                                                                poll=mustardtools_poll_mesh)
+    
+    mouth_controller_armature: bpy.props.PointerProperty(type=bpy.types.Object,
+                                                    name="Armature",
+                                                    description="Armature",
+                                                    poll=mustardtools_poll_armature)
+    mouth_controller_edge_bone_L: bpy.props.StringProperty(name="Edge L")
+    mouth_controller_edge_bone_R: bpy.props.StringProperty(name="Edge R")
+    mouth_controller_center_bone_top: bpy.props.StringProperty(name="Center Top")
+    mouth_controller_center_bone_bot: bpy.props.StringProperty(name="Center Bottom")
+    mouth_controller_middle1_bone_L_top: bpy.props.StringProperty(name="Middle 1 Top L",description="In the case of more than one middle bone, the Middle 1 should be the one near the center bone")
+    mouth_controller_middle1_bone_R_top: bpy.props.StringProperty(name="Middle 1 Top R",description="In the case of more than one middle bone, the Middle 1 should be the one near the center bone")
+    mouth_controller_middle2_bone_L_top: bpy.props.StringProperty(name="Middle 2 Top L",description="In the case of more than one middle bone, the Middle 2 should be the one far from the center bone")
+    mouth_controller_middle2_bone_R_top: bpy.props.StringProperty(name="Middle 2 Top R",description="In the case of more than one middle bone, the Middle 2 should be the one far from the center bone")
+    mouth_controller_middle1_bone_L_bot: bpy.props.StringProperty(name="Middle 1 Bottom L",description="In the case of more than one middle bone, the Middle 1 should be the one near the center bone")
+    mouth_controller_middle1_bone_R_bot: bpy.props.StringProperty(name="Middle 1 Bottom R",description="In the case of more than one middle bone, the Middle 1 should be the one near the center bone")
+    mouth_controller_middle2_bone_L_bot: bpy.props.StringProperty(name="Middle 2 Bottom L",description="In the case of more than one middle bone, the Middle 2 should be the one far from the center bone")
+    mouth_controller_middle2_bone_R_bot: bpy.props.StringProperty(name="Middle 2 Bottom R",description="In the case of more than one middle bone, the Middle 2 should be the one far from the center bone")
+    mouth_controller_jaw_bone: bpy.props.StringProperty(name="Jaw")
     
     # Slide Keyframes Tool definitions
     # UI definitions
@@ -867,6 +935,608 @@ class MUSTARDTOOLS_OT_IKSpline_Clean(bpy.types.Operator):
         box.label(text="        - " + str(IK_num_nMUI) + " of which are not Mustard Tools generated.")
 
 # ------------------------------------------------------------------------
+#    Mouth Controller
+# ------------------------------------------------------------------------
+
+class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
+    """This tool will create a mouth controller.\nThe control will be assigned to a bone that you should create in advance, and selected in the Controller Settings"""
+    bl_idname = "mustardui.mouth_controller"
+    bl_label = "Apply"
+    bl_options = {'REGISTER','UNDO'}
+    
+    @classmethod
+    def poll(cls, context):
+        
+        settings = bpy.context.scene.mustardtools_settings
+        
+        if context.mode != "POSE":
+            return False
+        if settings.mouth_controller_mirror and (settings.mouth_controller_jaw_bone == "" or settings.mouth_controller_center_bone_top == "" or settings.mouth_controller_center_bone_bot == "" or settings.mouth_controller_edge_bone_L == "" or settings.mouth_controller_middle1_bone_L_top == "" or settings.mouth_controller_middle1_bone_L_bot == "" or  (settings.mouth_controller_number_bones > 1 and (settings.mouth_controller_middle2_bone_L_top == "" or settings.mouth_controller_middle2_bone_L_bot == ""))):
+            return False
+        elif not settings.mouth_controller_mirror and (settings.mouth_controller_jaw_bone == "" or settings.mouth_controller_center_bone_top == "" or settings.mouth_controller_center_bone_bot == "" or settings.mouth_controller_edge_bone_L == "" or settings.mouth_controller_edge_bone_R == "" or settings.mouth_controller_middle1_bone_L_top == "" or settings.mouth_controller_middle1_bone_R_top == "" or settings.mouth_controller_middle1_bone_L_bot == "" or settings.mouth_controller_middle1_bone_R_bot == "" or  (settings.mouth_controller_number_bones > 1 and (settings.mouth_controller_middle2_bone_L_top == "" or settings.mouth_controller_middle2_bone_R_top == "" or settings.mouth_controller_middle2_bone_L_bot == "" or settings.mouth_controller_middle2_bone_R_bot == ""))):
+            return False
+        else:
+            return True
+
+    def execute(self, context):
+        
+        settings = bpy.context.scene.mustardtools_settings
+        mouth_controller_name = settings.ms_naming_prefix + "_MouthControllerConstraint"
+        mouth_controller_rot_name = settings.ms_naming_prefix + "_MouthControllerConstraintRot"
+        mouth_controller_floor_name = settings.ms_naming_prefix + "_MouthControllerFloor"
+        mirror = settings.mouth_controller_mirror
+        
+        floor_offset = settings.mouth_controller_floor_offset
+        transform_min = 0.1
+        transform_ratio = settings.mouth_controller_transform_ratio
+        middle1_correction_x = settings.mouth_controller_middle1_bone_correction_x
+        middle2_correction_x = settings.mouth_controller_middle2_bone_correction_x
+        middle1_correction_z = settings.mouth_controller_middle1_bone_correction_z
+        middle2_correction_z = settings.mouth_controller_middle2_bone_correction_z
+        edge_correction_z = settings.mouth_controller_edge_bone_correction_z
+        center_correction_z = settings.mouth_controller_center_bone_correction_z
+                
+        armature = settings.mouth_controller_armature
+        armature_controller = settings.mouth_controller_armature_controller
+        controller_bone = settings.mouth_controller_bone
+        
+        # Jaw bone
+        bone = settings.mouth_controller_jaw_bone
+        if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
+            constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+            constr.name = mouth_controller_name
+        else:
+            constr = armature.pose.bones[bone].constraints[mouth_controller_name]
+        constr.target = armature_controller
+        constr.subtarget = controller_bone
+        constr.use_motion_extrapolate = True
+        constr.target_space = "LOCAL"
+        constr.owner_space = "LOCAL"
+        constr.from_min_y = transform_min
+        constr.map_to_z_from = "Y"
+        constr.to_min_z = -transform_min
+        
+        # Edge bones
+        bone = settings.mouth_controller_edge_bone_L
+        if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
+            constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+            constr.name = mouth_controller_name
+        else:
+            constr = armature.pose.bones[bone].constraints[mouth_controller_name]
+        constr.target = armature_controller
+        constr.subtarget = controller_bone
+        constr.use_motion_extrapolate = True
+        constr.target_space = "LOCAL"
+        constr.owner_space = "LOCAL"
+        
+        constr.from_min_x = transform_min
+        constr.map_to_z_from = "X"
+        constr.to_min_z = -transform_min
+        
+        constr.from_min_z = transform_min
+        constr.map_to_x_from = "Z"
+        constr.to_min_x = transform_min * edge_correction_z
+        
+        if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_rot_name])<1:
+            constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+            constr.name = mouth_controller_rot_name
+        else:
+            constr = armature.pose.bones[bone].constraints[mouth_controller_rot_name]
+        constr.target = armature_controller
+        constr.subtarget = controller_bone
+        constr.use_motion_extrapolate = True
+        constr.target_space = "LOCAL"
+        constr.owner_space = "LOCAL"
+        
+        constr.map_from = "ROTATION"
+        
+        constr.from_min_z_rot = 90/180*3.14
+        constr.map_to_y_from = "Z"
+        constr.to_min_y = transform_min
+        
+        
+        if mirror:
+            string_check = settings.mouth_controller_edge_bone_L[len(settings.mouth_controller_edge_bone_L)-1]
+            if string_check=="l":
+                bone = settings.mouth_controller_edge_bone_L[:-1]+"r"
+            elif string_check=="r":
+                bone = settings.mouth_controller_edge_bone_L[:-1]+"l"
+            else:
+                self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
+                return {'FINISHED'}
+        else:
+            bone = settings.mouth_controller_edge_bone_R
+        if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
+            constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+            constr.name = mouth_controller_name
+        else:
+            constr = armature.pose.bones[bone].constraints[mouth_controller_name]
+        constr.target = armature_controller
+        constr.subtarget = controller_bone
+        constr.use_motion_extrapolate = True
+        constr.target_space = "LOCAL"
+        constr.owner_space = "LOCAL"
+        
+        constr.from_min_x = -transform_min
+        constr.map_to_z_from = "X"
+        constr.to_min_z = transform_min
+        
+        constr.from_min_z = transform_min
+        constr.map_to_x_from = "Z"
+        constr.to_min_x = -transform_min * edge_correction_z
+        
+        if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_rot_name])<1:
+            constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+            constr.name = mouth_controller_rot_name
+        else:
+            constr = armature.pose.bones[bone].constraints[mouth_controller_rot_name]
+        constr.target = armature_controller
+        constr.subtarget = controller_bone
+        constr.use_motion_extrapolate = True
+        constr.target_space = "LOCAL"
+        constr.owner_space = "LOCAL"
+        
+        constr.map_from = "ROTATION"
+        
+        constr.from_min_z_rot = 90/180*3.14
+        constr.map_to_y_from = "Z"
+        constr.to_min_y = transform_min
+        
+        
+        # Center bones
+        bone = settings.mouth_controller_center_bone_top
+        if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
+            constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+            constr.name = mouth_controller_name
+        else:
+            constr = armature.pose.bones[bone].constraints[mouth_controller_name]
+        constr.target = armature_controller
+        constr.subtarget = controller_bone
+        constr.use_motion_extrapolate = True
+        constr.target_space = "LOCAL"
+        constr.owner_space = "LOCAL"
+        
+        constr.from_min_z = transform_min
+        constr.map_to_x_from = "Z"
+        constr.to_min_x = transform_min * center_correction_z
+        
+        if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_floor_name])<1:
+            constr = armature.pose.bones[bone].constraints.new('FLOOR')
+            constr.name = mouth_controller_floor_name
+        else:
+            constr = armature.pose.bones[bone].constraints[mouth_controller_floor_name]
+        constr.target = armature
+        constr.subtarget = settings.mouth_controller_center_bone_bot
+        constr.offset = floor_offset
+        
+        
+        bone = settings.mouth_controller_center_bone_bot
+        if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
+            constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+            constr.name = mouth_controller_name
+        else:
+            constr = armature.pose.bones[bone].constraints[mouth_controller_name]
+        constr.target = armature_controller
+        constr.subtarget = controller_bone
+        constr.use_motion_extrapolate = True
+        constr.target_space = "LOCAL"
+        constr.owner_space = "LOCAL"
+        
+        constr.from_min_z = transform_min
+        constr.map_to_x_from = "Z"
+        constr.to_min_x = transform_min * center_correction_z
+        
+        
+        # Middle bones 1 top
+        bone = settings.mouth_controller_middle1_bone_L_top
+        if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
+            constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+            constr.name = mouth_controller_name
+        else:
+            constr = armature.pose.bones[bone].constraints[mouth_controller_name]
+        constr.target = armature_controller
+        constr.subtarget = controller_bone
+        constr.use_motion_extrapolate = True
+        constr.target_space = "LOCAL"
+        constr.owner_space = "LOCAL"
+        
+        constr.from_min_x = transform_min
+        constr.map_to_z_from = "X"
+        constr.to_min_z = -transform_min * middle1_correction_x
+        
+        constr.from_min_z = transform_min
+        constr.map_to_x_from = "Z"
+        constr.to_min_x = transform_min * middle1_correction_z
+        
+        if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_floor_name])<1:
+            constr = armature.pose.bones[bone].constraints.new('FLOOR')
+            constr.name = mouth_controller_floor_name
+        else:
+            constr = armature.pose.bones[bone].constraints[mouth_controller_floor_name]
+        constr.target = armature
+        constr.subtarget = settings.mouth_controller_middle1_bone_L_bot
+        constr.offset = floor_offset
+        
+        if mirror:
+            string_check = settings.mouth_controller_middle1_bone_L_top[len(settings.mouth_controller_middle1_bone_L_top)-1]
+            if string_check=="l":
+                bone = settings.mouth_controller_middle1_bone_L_top[:-1]+"r"
+            elif string_check=="r":
+                bone = settings.mouth_controller_middle1_bone_L_top[:-1]+"l"
+            else:
+                self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
+                return {'FINISHED'}
+        else:
+            bone = mouth_controller_middle1_bone_R_top
+        if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
+            constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+            constr.name = mouth_controller_name
+        else:
+            constr = armature.pose.bones[bone].constraints[mouth_controller_name]
+        constr.target = armature_controller
+        constr.subtarget = controller_bone
+        constr.use_motion_extrapolate = True
+        constr.target_space = "LOCAL"
+        constr.owner_space = "LOCAL"
+        
+        constr.from_min_x = -transform_min
+        constr.map_to_z_from = "X"
+        constr.to_min_z = transform_min * middle1_correction_x
+        
+        constr.from_min_z = transform_min
+        constr.map_to_x_from = "Z"
+        constr.to_min_x = -transform_min * middle1_correction_z
+        
+        if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_floor_name])<1:
+            constr = armature.pose.bones[bone].constraints.new('FLOOR')
+            constr.name = mouth_controller_floor_name
+        else:
+            constr = armature.pose.bones[bone].constraints[mouth_controller_floor_name]
+        constr.target = armature
+        if mirror:
+            string_check = settings.mouth_controller_middle1_bone_L_bot[len(settings.mouth_controller_middle1_bone_L_bot)-1]
+            if string_check=="l":
+                constr.subtarget = settings.mouth_controller_middle1_bone_L_bot[:-1]+"r"
+            elif string_check=="r":
+                constr.subtarget = settings.mouth_controller_middle1_bone_L_bot[:-1]+"l"
+            else:
+                self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
+                return {'FINISHED'}
+        else:
+            constr.subtarget = mouth_controller_middle1_bone_R_bot
+        constr.offset = floor_offset
+        
+        # Middle bones 1 bottom
+        bone = settings.mouth_controller_middle1_bone_L_bot
+        if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
+            constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+            constr.name = mouth_controller_name
+        else:
+            constr = armature.pose.bones[bone].constraints[mouth_controller_name]
+        constr.target = armature_controller
+        constr.subtarget = controller_bone
+        constr.use_motion_extrapolate = True
+        constr.target_space = "LOCAL"
+        constr.owner_space = "LOCAL"
+        
+        constr.from_min_x = transform_min
+        constr.map_to_z_from = "X"
+        constr.to_min_z = -transform_min * middle1_correction_x
+        
+        constr.from_min_z = transform_min
+        constr.map_to_x_from = "Z"
+        constr.to_min_x = transform_min * middle1_correction_z
+        
+        if mirror:
+            string_check = settings.mouth_controller_middle1_bone_L_bot[len(settings.mouth_controller_middle1_bone_L_bot)-1]
+            if string_check=="l":
+                bone = settings.mouth_controller_middle1_bone_L_bot[:-1]+"r"
+            elif string_check=="r":
+                bone = settings.mouth_controller_middle1_bone_L_bot[:-1]+"l"
+            else:
+                self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
+                return {'FINISHED'}
+        else:
+            bone = mouth_controller_middle1_bone_R_bot
+        if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
+            constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+            constr.name = mouth_controller_name
+        else:
+            constr = armature.pose.bones[bone].constraints[mouth_controller_name]
+        constr.target = armature_controller
+        constr.subtarget = controller_bone
+        constr.use_motion_extrapolate = True
+        constr.target_space = "LOCAL"
+        constr.owner_space = "LOCAL"
+        
+        constr.from_min_x = -transform_min
+        constr.map_to_z_from = "X"
+        constr.to_min_z = transform_min * middle1_correction_x
+        
+        constr.from_min_z = transform_min
+        constr.map_to_x_from = "Z"
+        constr.to_min_x = -transform_min * middle1_correction_z
+        
+        
+        if settings.mouth_controller_number_bones == 2:
+            # Middle bones 2 top
+            bone = settings.mouth_controller_middle2_bone_L_top
+            if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
+                constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+                constr.name = mouth_controller_name
+            else:
+                constr = armature.pose.bones[bone].constraints[mouth_controller_name]
+            constr.target = armature_controller
+            constr.subtarget = controller_bone
+            constr.use_motion_extrapolate = True
+            constr.target_space = "LOCAL"
+            constr.owner_space = "LOCAL"
+            
+            constr.from_min_x = transform_min
+            constr.map_to_z_from = "X"
+            constr.to_min_z = -transform_min * middle2_correction_x
+            
+            constr.from_min_z = transform_min
+            constr.map_to_x_from = "Z"
+            constr.to_min_x = transform_min * middle2_correction_z
+            
+            if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_floor_name])<1:
+                constr = armature.pose.bones[bone].constraints.new('FLOOR')
+                constr.name = mouth_controller_floor_name
+            else:
+                constr = armature.pose.bones[bone].constraints[mouth_controller_floor_name]
+            constr.target = armature
+            constr.subtarget = settings.mouth_controller_middle2_bone_L_bot
+            constr.offset = floor_offset
+            
+            if mirror:
+                string_check = settings.mouth_controller_middle2_bone_L_top[len(settings.mouth_controller_middle2_bone_L_top)-1]
+                if string_check=="l":
+                    bone = settings.mouth_controller_middle2_bone_L_top[:-1]+"r"
+                elif string_check=="r":
+                    bone = settings.mouth_controller_middle2_bone_L_top[:-1]+"l"
+                else:
+                    self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
+                    return {'FINISHED'}
+            else:
+                bone = mouth_controller_middle2_bone_R_top
+            if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
+                constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+                constr.name = mouth_controller_name
+            else:
+                constr = armature.pose.bones[bone].constraints[mouth_controller_name]
+            constr.target = armature_controller
+            constr.subtarget = controller_bone
+            constr.use_motion_extrapolate = True
+            constr.target_space = "LOCAL"
+            constr.owner_space = "LOCAL"
+            
+            constr.from_min_x = -transform_min
+            constr.map_to_z_from = "X"
+            constr.to_min_z = transform_min * middle2_correction_x
+            
+            constr.from_min_z = transform_min
+            constr.map_to_x_from = "Z"
+            constr.to_min_x = -transform_min * middle2_correction_z
+            
+            if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_floor_name])<1:
+                constr = armature.pose.bones[bone].constraints.new('FLOOR')
+                constr.name = mouth_controller_floor_name
+            else:
+                constr = armature.pose.bones[bone].constraints[mouth_controller_floor_name]
+            constr.target = armature
+            if mirror:
+                string_check = settings.mouth_controller_middle2_bone_L_bot[len(settings.mouth_controller_middle2_bone_L_bot)-1]
+                if string_check=="l":
+                    constr.subtarget = settings.mouth_controller_middle2_bone_L_bot[:-1]+"r"
+                elif string_check=="r":
+                    constr.subtarget = settings.mouth_controller_middle2_bone_L_bot[:-1]+"l"
+                else:
+                    self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
+                    return {'FINISHED'}
+            else:
+                constr.subtarget = mouth_controller_middle2_bone_R_bot
+            constr.offset = floor_offset
+            
+            
+            # Middle bones 2 bottom
+            bone = settings.mouth_controller_middle2_bone_L_bot
+            if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
+                constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+                constr.name = mouth_controller_name
+            else:
+                constr = armature.pose.bones[bone].constraints[mouth_controller_name]
+            constr.target = armature_controller
+            constr.subtarget = controller_bone
+            constr.use_motion_extrapolate = True
+            constr.target_space = "LOCAL"
+            constr.owner_space = "LOCAL"
+            
+            constr.from_min_x = transform_min
+            constr.map_to_z_from = "X"
+            constr.to_min_z = -transform_min * middle2_correction_x
+            
+            constr.from_min_z = transform_min
+            constr.map_to_x_from = "Z"
+            constr.to_min_x = transform_min * middle2_correction_z
+            
+            if mirror:
+                string_check = settings.mouth_controller_middle2_bone_L_bot[len(settings.mouth_controller_middle2_bone_L_bot)-1]
+                if string_check=="l":
+                    bone = settings.mouth_controller_middle2_bone_L_bot[:-1]+"r"
+                elif string_check=="r":
+                    bone = settings.mouth_controller_middle2_bone_L_bot[:-1]+"l"
+                else:
+                    self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
+                    return {'FINISHED'}
+            else:
+                bone = mouth_controller_middle2_bone_R_bot
+            if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
+                constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+                constr.name = mouth_controller_name
+            else:
+                constr = armature.pose.bones[bone].constraints[mouth_controller_name]
+            constr.target = armature_controller
+            constr.subtarget = controller_bone
+            constr.use_motion_extrapolate = True
+            constr.target_space = "LOCAL"
+            constr.owner_space = "LOCAL"
+            
+            constr.from_min_x = -transform_min
+            constr.map_to_z_from = "X"
+            constr.to_min_z = transform_min * middle2_correction_x
+            
+            constr.from_min_z = transform_min
+            constr.map_to_x_from = "Z"
+            constr.to_min_x = -transform_min * middle2_correction_z
+        
+        # Controller bone limits
+        bone = controller_bone
+        if len([m for m in armature_controller.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
+            constr = armature_controller.pose.bones[bone].constraints.new('LIMIT_LOCATION')
+            constr.name = mouth_controller_name
+        else:
+            constr = armature_controller.pose.bones[bone].constraints[mouth_controller_name]
+        constr.owner_space = "LOCAL"
+        
+        constr.use_max_x = True
+        constr.max_x = transform_min/10
+        constr.use_min_x = True
+        constr.min_x = -transform_min/15
+        
+        constr.use_max_y = True
+        constr.max_y = transform_min/20
+        constr.use_min_y = True
+        constr.min_y = -transform_min/5
+        
+        constr.use_max_z = True
+        constr.max_z = transform_min/15
+        constr.use_min_z = True
+        constr.min_z = -transform_min/15
+        
+        
+        if len([m for m in armature_controller.pose.bones[bone].constraints if m.name == mouth_controller_rot_name])<1:
+            constr = armature_controller.pose.bones[bone].constraints.new('LIMIT_ROTATION')
+            constr.name = mouth_controller_rot_name
+        else:
+            constr = armature_controller.pose.bones[bone].constraints[mouth_controller_rot_name]
+        constr.owner_space = "LOCAL"
+        
+        constr.use_limit_x = True
+        constr.max_x = 0.
+        constr.min_x = 0.
+        
+        constr.use_limit_y = True
+        constr.max_y = 0.
+        constr.min_y = 0.
+        
+        constr.use_limit_z = True
+        constr.max_z = 20/180*3.14
+        constr.min_z = -20/180*3.14
+        
+        # Apply custom shape
+        controller_bone = armature_controller.pose.bones[bone]
+        controller_bone.custom_shape = settings.mouth_controller_bone_custom_shape
+        
+        
+        self.report({'INFO'}, 'MustardTools - Mouth Controller successfully created.')
+        
+        return {'FINISHED'}
+
+
+class MUSTARDTOOLS_OT_MouthControllerClean(bpy.types.Operator):
+    """This tool will clean all setting related to a mouth controller generated by this addon.\nThe armatures which are cleaned are the ones set in the settings"""
+    bl_idname = "mustardui.mouth_controller_clean"
+    bl_label = "Apply"
+    bl_options = {'REGISTER','UNDO'}
+    
+    @classmethod
+    def poll(cls, context):
+        
+        settings = bpy.context.scene.mustardtools_settings
+        
+        if context.mode != "POSE":
+            return False
+        if settings.mouth_controller_mirror and (settings.mouth_controller_jaw_bone == "" and settings.mouth_controller_center_bone_top == "" or settings.mouth_controller_center_bone_bot == "" or settings.mouth_controller_edge_bone_L == "" or settings.mouth_controller_middle1_bone_L_top == "" or settings.mouth_controller_middle1_bone_L_bot == "" or  (settings.mouth_controller_number_bones > 1 and (settings.mouth_controller_middle2_bone_L_top == "" or settings.mouth_controller_middle2_bone_L_bot == ""))):
+            return False
+        else:
+            return True
+
+    def execute(self, context):
+        
+        settings = bpy.context.scene.mustardtools_settings
+        mouth_controller_name = settings.ms_naming_prefix + "_MouthControllerConstraint"
+        mouth_controller_rot_name = settings.ms_naming_prefix + "_MouthControllerConstraintRot"
+        mouth_controller_floor_name = settings.ms_naming_prefix + "_MouthControllerFloor"
+        
+        armature = settings.mouth_controller_armature
+        armature_controller = settings.mouth_controller_armature_controller
+        controller_bone = settings.mouth_controller_bone
+        
+        removed_constr = 0
+        for bone in armature_controller.pose.bones:
+            for constr in bone.constraints:
+                if constr.name == mouth_controller_name or constr.name == mouth_controller_rot_name or constr.name == mouth_controller_floor_name:
+                    if settings.ms_debug:
+                        print("MustardTools Mouth Controller - Constraint "+constr.name+" removed from "+bone.name)
+                    bone.constraints.remove(constr)
+                    removed_constr = removed_constr + 1
+        
+        self.report({'INFO'}, 'MustardTools - '+ str(removed_constr) +' constraints successfully removed.')
+        
+        return {'FINISHED'}
+
+class MUSTARDTOOLS_OT_MouthControllerSmartSearch(bpy.types.Operator):
+    """This tool will search for standard names of the lips bones"""
+    bl_idname = "mustardui.mouth_controller_search"
+    bl_label = ""
+    bl_options = {'REGISTER','UNDO'}
+    
+    @classmethod
+    def poll(cls, context):
+        
+        settings = bpy.context.scene.mustardtools_settings
+        
+        if context.mode != "POSE":
+            return False
+        else:
+            return True
+
+    def execute(self, context):
+        
+        settings = bpy.context.scene.mustardtools_settings
+        mouth_controller_name = settings.ms_naming_prefix + "_MouthControllerConstraint"
+        mouth_controller_rot_name = settings.ms_naming_prefix + "_MouthControllerConstraintRot"
+        mouth_controller_floor_name = settings.ms_naming_prefix + "_MouthControllerFloor"
+        
+        armature = settings.mouth_controller_armature
+        armature_controller = settings.mouth_controller_armature_controller
+        controller_bone = settings.mouth_controller_bone
+        
+        convention = 0
+        for bone in armature_controller.pose.bones:
+            if bone.name == "c_jawbone.x":
+                convention = 1 # auto-rig
+                break
+        
+        if convention==1:
+            settings.mouth_controller_mirror = True
+            settings.mouth_controller_jaw_bone = "c_jawbone.x"
+            settings.mouth_controller_center_bone_top = "c_lips_top.x"
+            settings.mouth_controller_center_bone_bot = "c_lips_bot.x"
+            settings.mouth_controller_edge_bone_L = "c_lips_smile.r"
+            settings.mouth_controller_middle1_bone_L_top = "c_lips_top.l"
+            settings.mouth_controller_middle1_bone_L_bot = "c_lips_bot.l"
+            settings.mouth_controller_middle2_bone_L_top = "c_lips_top_01.r"
+            settings.mouth_controller_middle2_bone_L_bot = "c_lips_bot_01.l"
+            self.report({'INFO'}, 'MustardTools - Auto-rig convention used to fill properties.')
+        else:
+            self.report({'INFO'}, 'MustardTools - No convention found. Insert bones manually.')
+        
+        
+        return {'FINISHED'}
+
+# ------------------------------------------------------------------------
 #    Slide Keyframes
 # ------------------------------------------------------------------------
 #
@@ -1279,6 +1949,164 @@ class MUSTARDTOOLS_PT_IKSpline(MainPanel, bpy.types.Panel):
         layout.separator()
         layout.operator('mustardui.ik_splineclean', icon="CANCEL")
 
+class MUSTARDTOOLS_PT_MouthController(MainPanel, bpy.types.Panel):
+    bl_idname = "MUSTARDTOOLS_PT_MouthController"
+    bl_label = "Mouth Controller"
+
+    def draw(self, context):
+        
+        layout = self.layout
+        settings = bpy.context.scene.mustardtools_settings
+        
+        row_scale = 1.8
+        
+        box=layout.box()
+        box.label(text="Main settings", icon="MESH_MONKEY")
+        
+        box.prop(settings,"mouth_controller_mirror")
+        box.prop(settings,"mouth_controller_number_bones")
+        if settings.ms_advanced:
+            box.prop(settings,"mouth_controller_transform_ratio")
+            box.prop(settings,"mouth_controller_floor_offset")
+            
+            box=layout.box()
+            box.label(text="Corrections", icon="SETTINGS")
+            row = box.row()
+            row.label(text="")
+            row.label(text="X")
+            row.label(text="Z")
+            row = box.row()
+            row.label(text="Center")
+            col = row.column()
+            col.enabled = False
+            col.prop(settings,"mouth_controller_center_bone_correction_x", text="")
+            row.prop(settings,"mouth_controller_center_bone_correction_z", text="")
+            row = box.row()
+            row.label(text="Edge")
+            col = row.column()
+            col.enabled = False
+            col.prop(settings,"mouth_controller_edge_bone_correction_x", text="")
+            row.prop(settings,"mouth_controller_edge_bone_correction_z", text="")
+            row = box.row()
+            row.label(text="Middle 1")
+            row.prop(settings,"mouth_controller_middle1_bone_correction_x", text="")
+            row.prop(settings,"mouth_controller_middle1_bone_correction_z", text="")
+            if settings.mouth_controller_number_bones>=2:
+                row = box.row()
+                row.label(text="Middle 2")
+                row.prop(settings,"mouth_controller_middle2_bone_correction_x", text="")
+                row.prop(settings,"mouth_controller_middle2_bone_correction_z", text="")
+        
+        box=layout.box()
+        box.label(text="Controller settings", icon="SHADING_WIRE")
+        row=box.row()
+        row.label(text="Armature")
+        row.scale_x = row_scale
+        row.prop(settings,"mouth_controller_armature_controller", text="")
+        if settings.mouth_controller_armature_controller != None:
+            row=box.row()
+            row.label(text="Bone")
+            row.scale_x = row_scale-0.1
+            row.prop_search(settings,"mouth_controller_bone",settings.mouth_controller_armature_controller.pose,"bones", text="")
+        box.separator()
+        row=box.row()
+        row.label(text="Custom shape")
+        row.scale_x = row_scale
+        row.prop(settings,"mouth_controller_bone_custom_shape", text="")    
+        
+        box=layout.box()
+        row=box.row()
+        row.label(text="Mouth settings", icon="BONE_DATA")
+        row.operator('mustardui.mouth_controller_search', icon="VIEWZOOM", text="")
+        row=box.row()
+        row.label(text="Armature")
+        row.scale_x = row_scale
+        row.prop(settings,"mouth_controller_armature", text="")
+        
+        row=box.row()
+        row.label(text="Jaw")
+        row.scale_x = row_scale-0.1
+        row.prop_search(settings,"mouth_controller_jaw_bone",settings.mouth_controller_armature.pose,"bones", text="")
+        row=box.row()
+        row.label(text="Center Top")
+        row.scale_x = row_scale-0.1
+        row.prop_search(settings,"mouth_controller_center_bone_top",settings.mouth_controller_armature.pose,"bones", text="")
+        row=box.row()
+        row.label(text="Center Bottom")
+        row.scale_x = row_scale-0.1
+        row.prop_search(settings,"mouth_controller_center_bone_bot",settings.mouth_controller_armature.pose,"bones", text="")
+        
+        if settings.mouth_controller_armature != None:
+            if settings.mouth_controller_mirror:
+                row=box.row()
+                row.label(text="Edge")
+                row.scale_x = row_scale-0.1
+                row.prop_search(settings,"mouth_controller_edge_bone_L",settings.mouth_controller_armature.pose,"bones", text="")
+                row=box.row()
+                row.label(text="Middle Top")
+                row.scale_x = row_scale-0.1
+                row.prop_search(settings,"mouth_controller_middle1_bone_L_top",settings.mouth_controller_armature.pose,"bones", text="")
+                row=box.row()
+                row.label(text="Middle Bottom")
+                row.scale_x = row_scale-0.1
+                row.prop_search(settings,"mouth_controller_middle1_bone_L_bot",settings.mouth_controller_armature.pose,"bones", text="")
+                if settings.mouth_controller_number_bones>=2:
+                    row=box.row()
+                    row.label(text="Middle 2 Top")
+                    row.scale_x = row_scale-0.1
+                    row.prop_search(settings,"mouth_controller_middle2_bone_L_top",settings.mouth_controller_armature.pose,"bones", text="")
+                    row=box.row()
+                    row.label(text="Middle 2 Bottom")
+                    row.scale_x = row_scale-0.1
+                    row.prop_search(settings,"mouth_controller_middle2_bone_L_bot",settings.mouth_controller_armature.pose,"bones", text="")
+            
+            else:
+                row=box.row()
+                row.label(text="Edge Left")
+                row.scale_x = row_scale-0.1
+                row.prop_search(settings,"mouth_controller_edge_bone_L",settings.mouth_controller_armature.pose,"bones", text="")
+                row=box.row()
+                row.label(text="Edge Right")
+                row.scale_x = row_scale-0.1
+                row.prop_search(settings,"mouth_controller_edge_bone_R",settings.mouth_controller_armature.pose,"bones", text="")
+                row=box.row()
+                row.label(text="Middle Top Left")
+                row.scale_x = row_scale-0.1
+                row.prop_search(settings,"mouth_controller_middle1_bone_L_top",settings.mouth_controller_armature.pose,"bones", text="")
+                row=box.row()
+                row.label(text="Middle Bottom Left")
+                row.scale_x = row_scale-0.1
+                row.prop_search(settings,"mouth_controller_middle1_bone_L_bot",settings.mouth_controller_armature.pose,"bones", text="")
+                row=box.row()
+                row.label(text="Middle Top Right")
+                row.scale_x = row_scale-0.1
+                row.prop_search(settings,"mouth_controller_middle1_bone_R_bot",settings.mouth_controller_armature.pose,"bones", text="")
+                row=box.row()
+                row.label(text="Middle Bottom Right")
+                row.scale_x = row_scale-0.1
+                row.prop_search(settings,"mouth_controller_middle1_bone_R_top",settings.mouth_controller_armature.pose,"bones", text="")
+                if settings.mouth_controller_number_bones>=2:
+                    row=box.row()
+                    row.label(text="Middle 2 Top Left")
+                    row.scale_x = row_scale-0.1
+                    row.prop_search(settings,"mouth_controller_middle2_bone_L_top",settings.mouth_controller_armature.pose,"bones", text="")
+                    row=box.row()
+                    row.label(text="Middle 2 Top Right")
+                    row.scale_x = row_scale-0.1
+                    row.prop_search(settings,"mouth_controller_middle2_bone_R_top",settings.mouth_controller_armature.pose,"bones", text="")
+                    row=box.row()
+                    row.label(text="Middle 2 Bottom Left")
+                    row.scale_x = row_scale-0.1
+                    row.prop_search(settings,"mouth_controller_middle2_bone_L_bot",settings.mouth_controller_armature.pose,"bones", text="")
+                    row=box.row()
+                    row.label(text="Middle 2 Bottom Right")
+                    row.scale_x = row_scale-0.1
+                    row.prop_search(settings,"mouth_controller_middle2_bone_R_bot",settings.mouth_controller_armature.pose,"bones", text="")
+        
+        layout.operator('mustardui.mouth_controller', icon="ADD")
+        layout.separator()
+        layout.operator('mustardui.mouth_controller_clean', icon="CANCEL", text="Clean")
+
 class MUSTARDTOOLS_PT_VariousTools(MainPanel, bpy.types.Panel):
     bl_idname = "MUSTARDTOOLS_PT_VariousTools"
     bl_label = "Additional Tools"
@@ -1335,6 +2163,10 @@ classes = (
     MUSTARDTOOLS_OT_IKSpline,
     MUSTARDTOOLS_OT_IKSpline_Clean,
     MUSTARDTOOLS_PT_IKSpline,
+    MUSTARDTOOLS_OT_MouthController,
+    MUSTARDTOOLS_OT_MouthControllerSmartSearch,
+    MUSTARDTOOLS_OT_MouthControllerClean,
+    MUSTARDTOOLS_PT_MouthController,
     MUSTARDTOOLS_OT_SlideKeyframes,
     MUSTARDTOOLS_OT_OptiXCompatibility,
     MUSTARDTOOLS_PT_VariousTools,
