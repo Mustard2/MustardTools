@@ -1525,6 +1525,7 @@ class MUSTARDTOOLS_OT_MouthControllerSmartSearch(bpy.types.Operator):
         
         if convention==1:
             settings.mouth_controller_mirror = True
+            settings.mouth_controller_number_bones = 2
             settings.mouth_controller_jaw_bone = "c_jawbone.x"
             settings.mouth_controller_center_bone_top = "c_lips_top.x"
             settings.mouth_controller_center_bone_bot = "c_lips_bot.x"
