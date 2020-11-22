@@ -2,7 +2,7 @@
 
 This is an addon with some tools for riggers and animators. It's still in early developement, so expect more features in the future.
 
-![](https://open3dlab.com/media/content/image/script4.png)
+![](https://ams0.files.sfmlab.com/content/content/image/script5_EgfcjNX.png)
 
 ## Features of the addon
 
