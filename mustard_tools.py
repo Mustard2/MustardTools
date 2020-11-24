@@ -5,7 +5,7 @@ bl_info = {
     "name": "Mustard Tools",
     "description": "A set of tools for riggers and animators",
     "author": "Mustard",
-    "version": (0, 2, 0),
+    "version": (0, 2, 1),
     "blender": (2, 90, 1),
     "warning": "",
     "category": "3D View",
@@ -1170,7 +1170,7 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
                 self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
                 return {'FINISHED'}
         else:
-            bone = mouth_controller_middle1_bone_R_top
+            bone = settings.mouth_controller_middle1_bone_R_top
         if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
             constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
             constr.name = mouth_controller_name
@@ -1206,7 +1206,7 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
                 self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
                 return {'FINISHED'}
         else:
-            constr.subtarget = mouth_controller_middle1_bone_R_bot
+            constr.subtarget = settings.mouth_controller_middle1_bone_R_bot
         constr.offset = floor_offset
         
         # Middle bones 1 bottom
@@ -1240,7 +1240,7 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
                 self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
                 return {'FINISHED'}
         else:
-            bone = mouth_controller_middle1_bone_R_bot
+            bone = settings.mouth_controller_middle1_bone_R_bot
         if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
             constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
             constr.name = mouth_controller_name
@@ -1302,7 +1302,7 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
                     self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
                     return {'FINISHED'}
             else:
-                bone = mouth_controller_middle2_bone_R_top
+                bone = settings.mouth_controller_middle2_bone_R_top
             if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
                 constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
                 constr.name = mouth_controller_name
@@ -1338,7 +1338,7 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
                     self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
                     return {'FINISHED'}
             else:
-                constr.subtarget = mouth_controller_middle2_bone_R_bot
+                constr.subtarget = settings.mouth_controller_middle2_bone_R_bot
             constr.offset = floor_offset
             
             
@@ -1373,7 +1373,7 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
                     self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
                     return {'FINISHED'}
             else:
-                bone = mouth_controller_middle2_bone_R_bot
+                bone = settings.mouth_controller_middle2_bone_R_bot
             if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
                 constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
                 constr.name = mouth_controller_name
@@ -2097,17 +2097,17 @@ class MUSTARDTOOLS_PT_MouthController(MainPanel, bpy.types.Panel):
                 row.scale_x = row_scale-0.1
                 row.prop_search(settings,"mouth_controller_middle1_bone_L_top",settings.mouth_controller_armature.pose,"bones", text="")
                 row=box.row()
+                row.label(text="Middle Top Right")
+                row.scale_x = row_scale-0.1
+                row.prop_search(settings,"mouth_controller_middle1_bone_R_top",settings.mouth_controller_armature.pose,"bones", text="")
+                row=box.row()
                 row.label(text="Middle Bottom Left")
                 row.scale_x = row_scale-0.1
                 row.prop_search(settings,"mouth_controller_middle1_bone_L_bot",settings.mouth_controller_armature.pose,"bones", text="")
                 row=box.row()
-                row.label(text="Middle Top Right")
-                row.scale_x = row_scale-0.1
-                row.prop_search(settings,"mouth_controller_middle1_bone_R_bot",settings.mouth_controller_armature.pose,"bones", text="")
-                row=box.row()
                 row.label(text="Middle Bottom Right")
                 row.scale_x = row_scale-0.1
-                row.prop_search(settings,"mouth_controller_middle1_bone_R_top",settings.mouth_controller_armature.pose,"bones", text="")
+                row.prop_search(settings,"mouth_controller_middle1_bone_R_bot",settings.mouth_controller_armature.pose,"bones", text="")
                 if settings.mouth_controller_number_bones>=2:
                     row=box.row()
                     row.label(text="Middle 2 Top Left")
