@@ -6,7 +6,7 @@ bl_info = {
     "description": "A set of tools for riggers and animators",
     "author": "Mustard",
     "version": (0, 2, 1),
-    "blender": (2, 90, 1),
+    "blender": (2, 93, 0),
     "warning": "",
     "category": "3D View",
 }
@@ -123,6 +123,10 @@ class MustardTools_Settings(bpy.types.PropertyGroup):
     mouth_controller_mirror: bpy.props.BoolProperty(name="Mirror",
                                                     description="Use this option if the bones are named with the .r and .l naming convention for right and left")
     mouth_controller_number_bones: bpy.props.IntProperty(default=2, min=1, max=2, name="Number of central bones")
+    mouth_controller_create_driver: bpy.props.BoolProperty(name="Create Driver",
+                                                    description="Create a driver on the Armature object to switch on/off the mouth controller")
+    mouth_controller_mhx: bpy.props.BoolProperty(name="MHX",
+                                                    description="Use this option if the armature type is MHX")
     mouth_controller_edge_bone_correction_x: bpy.props.FloatProperty(default=1.0,
                                                             name="Edge bones correction (x axis)",
                                                             description="The default value can not be changed")
@@ -147,9 +151,9 @@ class MustardTools_Settings(bpy.types.PropertyGroup):
     mouth_controller_center_bone_correction_z: bpy.props.FloatProperty(default=1.,
                                                             name="Middle bones 2 correction (z axis)",
                                                             description="This value is the ratio between the movement of the middle bones and the center bones on the x axis (back and forth movement of the controller bone)")
-    mouth_controller_floor_offset: bpy.props.FloatProperty(default=0.006,
-                                                            name="Upper bone floor distance",
-                                                            description="The minimum distance between the upper and the bottom mouth bones")
+    mouth_controller_floor_correction: bpy.props.FloatProperty(default=1.0,
+                                                            name="Limit distance factor",
+                                                            description="Value to adjust the maximum distance between the lips")
     mouth_controller_transform_ratio: bpy.props.FloatProperty(default=0.1,
                                                             name="Bones transformation value",
                                                             description="The value with which the bones are affected by the movement of the controller")
@@ -944,6 +948,35 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
     bl_label = "Apply"
     bl_options = {'REGISTER','UNDO'}
     
+    def check_mirror(self, bone):
+        
+        string_check = bone[len(bone)-1]
+        
+        if string_check == "l":
+            bone = bone[:-1]+"r"
+        elif string_check == "r":
+            bone = bone[:-1]+"l"
+        elif string_check == "L":
+            bone = bone[:-1]+"R"
+        elif string_check == "R":
+            bone = bone[:-1]+"L"
+        else:
+            return bone, False
+        
+        return bone, True
+    
+    def add_driver(self, armature, driver_object, path, prop_name):
+        
+        driver_object.driver_remove(path)
+        driver = driver_object.driver_add(path)
+        
+        driver = driver.driver
+        driver.type = "AVERAGE"
+        var = driver.variables.new()
+        var.name                 = 'var'
+        var.targets[0].id        = armature
+        var.targets[0].data_path = '["' + prop_name + '"]'
+    
     @classmethod
     def poll(cls, context):
         
@@ -968,8 +1001,9 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         mouth_controller_rot_name = settings.ms_naming_prefix + "_MouthControllerConstraintRot"
         mouth_controller_floor_name = settings.ms_naming_prefix + "_MouthControllerFloor"
         mirror = settings.mouth_controller_mirror
+        mhx = settings.mouth_controller_mhx
         
-        floor_offset = settings.mouth_controller_floor_offset
+        floor_correction = settings.mouth_controller_floor_correction
         transform_min = 0.1
         transform_ratio = settings.mouth_controller_transform_ratio
         middle1_correction_x = settings.mouth_controller_middle1_bone_correction_x
@@ -983,6 +1017,10 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         armature_controller = settings.mouth_controller_armature_controller
         controller_bone = settings.mouth_controller_bone
         
+        if settings.mouth_controller_create_driver:
+            mouth_controller_driver_name = "Mouth Controller Mute"
+            armature[mouth_controller_driver_name] = False
+        
         # Jaw bone
         bone = settings.mouth_controller_jaw_bone
         if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
@@ -995,11 +1033,24 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         constr.use_motion_extrapolate = True
         constr.target_space = "LOCAL"
         constr.owner_space = "LOCAL"
+        
         constr.from_min_y = transform_min
-        constr.map_to_z_from = "Y"
-        constr.to_min_z = -transform_min
+        
+        if mhx:
+            constr.map_to = "ROTATION"
+            constr.map_to_x_from = "Y"
+            constr.to_min_x_rot = -transform_min * 10. * 3.14 * 120./180.
+        else:
+            constr.map_to_z_from = "Y"
+            constr.to_min_z = -transform_min
+        
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
         
         # Edge bones
+        if settings.ms_debug:
+            print("MustardTools - Mouth Controller working on edge bones")
+        
         bone = settings.mouth_controller_edge_bone_L
         if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
             constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
@@ -1012,13 +1063,25 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         constr.target_space = "LOCAL"
         constr.owner_space = "LOCAL"
         
-        constr.from_min_x = transform_min
-        constr.map_to_z_from = "X"
-        constr.to_min_z = -transform_min
+        if mhx:
+            constr.from_min_x = transform_min
+            constr.map_to_x_from = "X"
+            constr.to_min_x = -transform_min
+            
+            constr.from_min_y = transform_min
+            constr.map_to_z_from = "Y"
+            constr.to_min_z = transform_min * edge_correction_z
+        else:
+            constr.from_min_x = transform_min
+            constr.map_to_z_from = "X"
+            constr.to_min_z = -transform_min
+            
+            constr.from_min_z = transform_min
+            constr.map_to_x_from = "Z"
+            constr.to_min_x = transform_min * edge_correction_z
         
-        constr.from_min_z = transform_min
-        constr.map_to_x_from = "Z"
-        constr.to_min_x = transform_min * edge_correction_z
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
         
         if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_rot_name])<1:
             constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
@@ -1034,21 +1097,26 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         constr.map_from = "ROTATION"
         
         constr.from_min_z_rot = 90/180*3.14
-        constr.map_to_y_from = "Z"
-        constr.to_min_y = transform_min
         
+        if mhx:
+            constr.map_to_z_from = "Z"
+            constr.to_min_z = -transform_min
+        else:
+            constr.map_to_y_from = "Z"
+            constr.to_min_y = transform_min
+        
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
         
         if mirror:
-            string_check = settings.mouth_controller_edge_bone_L[len(settings.mouth_controller_edge_bone_L)-1]
-            if string_check=="l":
-                bone = settings.mouth_controller_edge_bone_L[:-1]+"r"
-            elif string_check=="r":
-                bone = settings.mouth_controller_edge_bone_L[:-1]+"l"
-            else:
+            bone, mirror_check = self.check_mirror(settings.mouth_controller_edge_bone_L)
+            
+            if not mirror_check:
                 self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
                 return {'FINISHED'}
         else:
             bone = settings.mouth_controller_edge_bone_R
+        
         if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
             constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
             constr.name = mouth_controller_name
@@ -1060,13 +1128,25 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         constr.target_space = "LOCAL"
         constr.owner_space = "LOCAL"
         
-        constr.from_min_x = -transform_min
-        constr.map_to_z_from = "X"
-        constr.to_min_z = transform_min
+        if mhx:
+            constr.from_min_x = transform_min
+            constr.map_to_x_from = "X"
+            constr.to_min_x = transform_min
+            
+            constr.from_min_y = transform_min
+            constr.map_to_z_from = "Y"
+            constr.to_min_z = transform_min * edge_correction_z
+        else:
+            constr.from_min_x = -transform_min
+            constr.map_to_z_from = "X"
+            constr.to_min_z = transform_min
+            
+            constr.from_min_z = transform_min
+            constr.map_to_x_from = "Z"
+            constr.to_min_x = -transform_min * edge_correction_z
         
-        constr.from_min_z = transform_min
-        constr.map_to_x_from = "Z"
-        constr.to_min_x = -transform_min * edge_correction_z
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
         
         if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_rot_name])<1:
             constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
@@ -1082,11 +1162,21 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         constr.map_from = "ROTATION"
         
         constr.from_min_z_rot = 90/180*3.14
-        constr.map_to_y_from = "Z"
-        constr.to_min_y = transform_min
         
+        if mhx:
+            constr.map_to_z_from = "Z"
+            constr.to_min_z = -transform_min
+        else:
+            constr.map_to_y_from = "Z"
+            constr.to_min_y = transform_min
+        
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
         
         # Center bones
+        if settings.ms_debug:
+            print("MustardTools - Mouth Controller working on center bones")
+        
         bone = settings.mouth_controller_center_bone_top
         if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
             constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
@@ -1099,19 +1189,30 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         constr.target_space = "LOCAL"
         constr.owner_space = "LOCAL"
         
-        constr.from_min_z = transform_min
-        constr.map_to_x_from = "Z"
-        constr.to_min_x = transform_min * center_correction_z
+        if mhx:
+            constr.from_min_z = transform_min
+            constr.map_to_y_from = "Z"
+            constr.to_min_y = transform_min * center_correction_z
+        else:
+            constr.from_min_z = transform_min
+            constr.map_to_x_from = "Z"
+            constr.to_min_x = transform_min * center_correction_z
+            
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
         
         if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_floor_name])<1:
-            constr = armature.pose.bones[bone].constraints.new('FLOOR')
+            constr = armature.pose.bones[bone].constraints.new('LIMIT_DISTANCE')
             constr.name = mouth_controller_floor_name
         else:
             constr = armature.pose.bones[bone].constraints[mouth_controller_floor_name]
         constr.target = armature
         constr.subtarget = settings.mouth_controller_center_bone_bot
-        constr.offset = floor_offset
+        constr.distance = 0.015 * floor_correction
+        constr.limit_mode = "LIMITDIST_OUTSIDE"
         
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
         
         bone = settings.mouth_controller_center_bone_bot
         if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
@@ -1125,12 +1226,22 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         constr.target_space = "LOCAL"
         constr.owner_space = "LOCAL"
         
-        constr.from_min_z = transform_min
-        constr.map_to_x_from = "Z"
-        constr.to_min_x = transform_min * center_correction_z
+        if mhx:
+            constr.from_min_z = transform_min
+            constr.map_to_y_from = "Z"
+            constr.to_min_y = transform_min * center_correction_z
+        else:
+            constr.from_min_z = transform_min
+            constr.map_to_x_from = "Z"
+            constr.to_min_x = transform_min * center_correction_z
         
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
         
         # Middle bones 1 top
+        if settings.ms_debug:
+            print("MustardTools - Mouth Controller working on middle bones 1 top")
+        
         bone = settings.mouth_controller_middle1_bone_L_top
         if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
             constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
@@ -1143,30 +1254,68 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         constr.target_space = "LOCAL"
         constr.owner_space = "LOCAL"
         
-        constr.from_min_x = transform_min
-        constr.map_to_z_from = "X"
-        constr.to_min_z = -transform_min * middle1_correction_x
+        if mhx:
+            constr.from_min_x = transform_min
+            constr.map_to_x_from = "X"
+            constr.to_min_x = -transform_min * middle1_correction_x
+            
+            constr.from_min_z = transform_min
+            constr.map_to_y_from = "Z"
+            constr.to_min_y = transform_min * middle1_correction_z
+        else:
+            constr.from_min_x = transform_min
+            constr.map_to_z_from = "X"
+            constr.to_min_z = -transform_min * middle1_correction_x
+            
+            constr.from_min_z = transform_min
+            constr.map_to_x_from = "Z"
+            constr.to_min_x = transform_min * middle1_correction_z
         
-        constr.from_min_z = transform_min
-        constr.map_to_x_from = "Z"
-        constr.to_min_x = transform_min * middle1_correction_z
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
+            
+        #  Rotation constraint
+        if mhx:
+            if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_rot_name])<1:
+                constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+                constr.name = mouth_controller_rot_name
+            else:
+                constr = armature.pose.bones[bone].constraints[mouth_controller_rot_name]
+            constr.target = armature_controller
+            constr.subtarget = controller_bone
+            constr.use_motion_extrapolate = True
+            constr.target_space = "LOCAL"
+            constr.owner_space = "LOCAL"
+            
+            constr.map_from = "ROTATION"
+            constr.map_to = "ROTATION"
+            
+            constr.from_min_z_rot = 90/180*3.14
+            
+            constr.map_to_y_from = "Z"
+            constr.to_min_y_rot = 120/180*3.14
         
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
+        
+        #  Lips distance constraint
         if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_floor_name])<1:
-            constr = armature.pose.bones[bone].constraints.new('FLOOR')
+            constr = armature.pose.bones[bone].constraints.new('LIMIT_DISTANCE')
             constr.name = mouth_controller_floor_name
         else:
             constr = armature.pose.bones[bone].constraints[mouth_controller_floor_name]
         constr.target = armature
         constr.subtarget = settings.mouth_controller_middle1_bone_L_bot
-        constr.offset = floor_offset
+        constr.distance = 0.01 * floor_correction
+        constr.limit_mode = "LIMITDIST_OUTSIDE"
         
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
+            
         if mirror:
-            string_check = settings.mouth_controller_middle1_bone_L_top[len(settings.mouth_controller_middle1_bone_L_top)-1]
-            if string_check=="l":
-                bone = settings.mouth_controller_middle1_bone_L_top[:-1]+"r"
-            elif string_check=="r":
-                bone = settings.mouth_controller_middle1_bone_L_top[:-1]+"l"
-            else:
+            bone, mirror_check = self.check_mirror(settings.mouth_controller_middle1_bone_L_top)
+            
+            if not mirror_check:
                 self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
                 return {'FINISHED'}
         else:
@@ -1182,34 +1331,77 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         constr.target_space = "LOCAL"
         constr.owner_space = "LOCAL"
         
-        constr.from_min_x = -transform_min
-        constr.map_to_z_from = "X"
-        constr.to_min_z = transform_min * middle1_correction_x
+        if mhx:
+            constr.from_min_x = transform_min
+            constr.map_to_x_from = "X"
+            constr.to_min_x = transform_min * middle1_correction_x
+            
+            constr.from_min_z = transform_min
+            constr.map_to_y_from = "Z"
+            constr.to_min_y = transform_min * middle1_correction_z
+        else:
+            constr.from_min_x = -transform_min
+            constr.map_to_z_from = "X"
+            constr.to_min_z = transform_min * middle1_correction_x
+            
+            constr.from_min_z = transform_min
+            constr.map_to_x_from = "Z"
+            constr.to_min_x = -transform_min * middle1_correction_z
         
-        constr.from_min_z = transform_min
-        constr.map_to_x_from = "Z"
-        constr.to_min_x = -transform_min * middle1_correction_z
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
+        
+        #  Rotation constraint
+        if mhx:
+            if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_rot_name])<1:
+                constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+                constr.name = mouth_controller_rot_name
+            else:
+                constr = armature.pose.bones[bone].constraints[mouth_controller_rot_name]
+            constr.target = armature_controller
+            constr.subtarget = controller_bone
+            constr.use_motion_extrapolate = True
+            constr.target_space = "LOCAL"
+            constr.owner_space = "LOCAL"
+            
+            constr.map_from = "ROTATION"
+            constr.map_to = "ROTATION"
+            
+            constr.from_min_z_rot = 90/180*3.14
+            
+            constr.map_to_y_from = "Z"
+            constr.to_min_y_rot = -120/180*3.14
+        
+        
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
         
         if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_floor_name])<1:
-            constr = armature.pose.bones[bone].constraints.new('FLOOR')
+            constr = armature.pose.bones[bone].constraints.new('LIMIT_DISTANCE')
             constr.name = mouth_controller_floor_name
         else:
             constr = armature.pose.bones[bone].constraints[mouth_controller_floor_name]
         constr.target = armature
         if mirror:
-            string_check = settings.mouth_controller_middle1_bone_L_bot[len(settings.mouth_controller_middle1_bone_L_bot)-1]
-            if string_check=="l":
-                constr.subtarget = settings.mouth_controller_middle1_bone_L_bot[:-1]+"r"
-            elif string_check=="r":
-                constr.subtarget = settings.mouth_controller_middle1_bone_L_bot[:-1]+"l"
-            else:
+            constr_subtarget, mirror_check = self.check_mirror(settings.mouth_controller_middle1_bone_L_bot)
+            
+            if not mirror_check:
                 self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
                 return {'FINISHED'}
+            
+            constr.subtarget = constr_subtarget
         else:
             constr.subtarget = settings.mouth_controller_middle1_bone_R_bot
-        constr.offset = floor_offset
+        constr.distance = 0.01 * floor_correction
+        constr.limit_mode = "LIMITDIST_OUTSIDE"
+        
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
         
         # Middle bones 1 bottom
+        if settings.ms_debug:
+            print("MustardTools - Mouth Controller working on middle bones 1 bottom")
+        
         bone = settings.mouth_controller_middle1_bone_L_bot
         if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
             constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
@@ -1222,21 +1414,30 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         constr.target_space = "LOCAL"
         constr.owner_space = "LOCAL"
         
-        constr.from_min_x = transform_min
-        constr.map_to_z_from = "X"
-        constr.to_min_z = -transform_min * middle1_correction_x
+        if mhx:
+            constr.from_min_x = transform_min
+            constr.map_to_x_from = "X"
+            constr.to_min_x = -transform_min * middle1_correction_x
+            
+            constr.from_min_z = transform_min
+            constr.map_to_y_from = "Z"
+            constr.to_min_y = transform_min * middle1_correction_z
+        else:
+            constr.from_min_x = transform_min
+            constr.map_to_z_from = "X"
+            constr.to_min_z = -transform_min * middle1_correction_x
+            
+            constr.from_min_z = transform_min
+            constr.map_to_x_from = "Z"
+            constr.to_min_x = transform_min * middle1_correction_z
         
-        constr.from_min_z = transform_min
-        constr.map_to_x_from = "Z"
-        constr.to_min_x = transform_min * middle1_correction_z
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
         
         if mirror:
-            string_check = settings.mouth_controller_middle1_bone_L_bot[len(settings.mouth_controller_middle1_bone_L_bot)-1]
-            if string_check=="l":
-                bone = settings.mouth_controller_middle1_bone_L_bot[:-1]+"r"
-            elif string_check=="r":
-                bone = settings.mouth_controller_middle1_bone_L_bot[:-1]+"l"
-            else:
+            bone, mirror_check = self.check_mirror(settings.mouth_controller_middle1_bone_L_bot)
+            
+            if not mirror_check:
                 self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
                 return {'FINISHED'}
         else:
@@ -1252,17 +1453,36 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         constr.target_space = "LOCAL"
         constr.owner_space = "LOCAL"
         
-        constr.from_min_x = -transform_min
-        constr.map_to_z_from = "X"
-        constr.to_min_z = transform_min * middle1_correction_x
+        if mhx:
+            constr.from_min_x = transform_min
+            constr.map_to_x_from = "X"
+            constr.to_min_x = transform_min * middle1_correction_x
+            
+            constr.from_min_z = transform_min
+            constr.map_to_y_from = "Z"
+            constr.to_min_y = transform_min * middle1_correction_z
+        else:
+            constr.from_min_x = transform_min
+            constr.map_to_z_from = "X"
+            constr.to_min_z = transform_min * middle1_correction_x
+            
+            constr.from_min_z = transform_min
+            constr.map_to_x_from = "Z"
+            constr.to_min_x = -transform_min * middle1_correction_z
         
-        constr.from_min_z = transform_min
-        constr.map_to_x_from = "Z"
-        constr.to_min_x = -transform_min * middle1_correction_z
-        
+        if settings.mouth_controller_create_driver:
+            self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
         
         if settings.mouth_controller_number_bones == 2:
+            
+            if settings.ms_debug:
+                print("MustardTools - Mouth Controller detected Mirror")
+            
             # Middle bones 2 top
+            if settings.ms_debug:
+                print("MustardTools - Mouth Controller working on middle bones 2 top")
+            
+            #  Location constraint
             bone = settings.mouth_controller_middle2_bone_L_top
             if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
                 constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
@@ -1275,30 +1495,71 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
             constr.target_space = "LOCAL"
             constr.owner_space = "LOCAL"
             
-            constr.from_min_x = transform_min
-            constr.map_to_z_from = "X"
-            constr.to_min_z = -transform_min * middle2_correction_x
+            if mhx:
+                constr.from_min_x = transform_min
+                constr.map_to_x_from = "X"
+                constr.to_min_x = -transform_min * middle2_correction_x
+                
+                constr.from_min_z = transform_min
+                constr.map_to_y_from = "Z"
+                constr.to_min_y = transform_min * middle2_correction_z
+            else:
+                constr.from_min_x = transform_min
+                constr.map_to_z_from = "X"
+                constr.to_min_z = -transform_min * middle2_correction_x
+                
+                constr.from_min_z = transform_min
+                constr.map_to_x_from = "Z"
+                constr.to_min_x = transform_min * middle2_correction_z
             
-            constr.from_min_z = transform_min
-            constr.map_to_x_from = "Z"
-            constr.to_min_x = transform_min * middle2_correction_z
+            if settings.mouth_controller_create_driver:
+                self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
             
+            #  Rotation constraint
+            if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_rot_name])<1:
+                constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+                constr.name = mouth_controller_rot_name
+            else:
+                constr = armature.pose.bones[bone].constraints[mouth_controller_rot_name]
+            constr.target = armature_controller
+            constr.subtarget = controller_bone
+            constr.use_motion_extrapolate = True
+            constr.target_space = "LOCAL"
+            constr.owner_space = "LOCAL"
+            
+            constr.map_from = "ROTATION"
+            
+            constr.from_min_z_rot = 90/180*3.14
+            
+            if mhx:
+                constr.map_to_z_from = "Z"
+                constr.to_min_z = -transform_min/4. * middle2_correction_z
+            else:
+                constr.map_to_y_from = "Z"
+                constr.to_min_y = transform_min/4. * middle2_correction_z
+            
+            if settings.mouth_controller_create_driver:
+                self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
+            
+            #  Lower lip Constraint
             if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_floor_name])<1:
-                constr = armature.pose.bones[bone].constraints.new('FLOOR')
+                constr = armature.pose.bones[bone].constraints.new('LIMIT_DISTANCE')
                 constr.name = mouth_controller_floor_name
             else:
                 constr = armature.pose.bones[bone].constraints[mouth_controller_floor_name]
             constr.target = armature
             constr.subtarget = settings.mouth_controller_middle2_bone_L_bot
-            constr.offset = floor_offset
+            constr.distance = 0.008 * floor_correction
+            constr.limit_mode = "LIMITDIST_OUTSIDE"
             
+            if settings.mouth_controller_create_driver:
+                self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
+            
+            #  Location constraint
             if mirror:
-                string_check = settings.mouth_controller_middle2_bone_L_top[len(settings.mouth_controller_middle2_bone_L_top)-1]
-                if string_check=="l":
-                    bone = settings.mouth_controller_middle2_bone_L_top[:-1]+"r"
-                elif string_check=="r":
-                    bone = settings.mouth_controller_middle2_bone_L_top[:-1]+"l"
-                else:
+                bone, mirror_check = self.check_mirror(settings.mouth_controller_middle2_bone_L_top)
+                
+                if not mirror_check:
                     self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
                     return {'FINISHED'}
             else:
@@ -1314,35 +1575,80 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
             constr.target_space = "LOCAL"
             constr.owner_space = "LOCAL"
             
-            constr.from_min_x = -transform_min
-            constr.map_to_z_from = "X"
-            constr.to_min_z = transform_min * middle2_correction_x
+            if mhx:
+                constr.from_min_x = transform_min
+                constr.map_to_x_from = "X"
+                constr.to_min_x = transform_min * middle2_correction_x
+                
+                constr.from_min_z = transform_min
+                constr.map_to_y_from = "Z"
+                constr.to_min_y = transform_min * middle2_correction_z
+            else:
+                constr.from_min_x = transform_min
+                constr.map_to_z_from = "X"
+                constr.to_min_z = transform_min * middle2_correction_x
+                
+                constr.from_min_z = transform_min
+                constr.map_to_x_from = "Z"
+                constr.to_min_x = -transform_min * middle2_correction_z
             
-            constr.from_min_z = transform_min
-            constr.map_to_x_from = "Z"
-            constr.to_min_x = -transform_min * middle2_correction_z
+            if settings.mouth_controller_create_driver:
+                self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
             
+            #  Rotation constraint
+            if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_rot_name])<1:
+                constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+                constr.name = mouth_controller_rot_name
+            else:
+                constr = armature.pose.bones[bone].constraints[mouth_controller_rot_name]
+            constr.target = armature_controller
+            constr.subtarget = controller_bone
+            constr.use_motion_extrapolate = True
+            constr.target_space = "LOCAL"
+            constr.owner_space = "LOCAL"
+            
+            constr.map_from = "ROTATION"
+            
+            constr.from_min_z_rot = 90/180*3.14
+            
+            if mhx:
+                constr.map_to_z_from = "Z"
+                constr.to_min_z = -transform_min/4. * middle2_correction_z
+            else:
+                constr.map_to_y_from = "Z"
+                constr.to_min_y = transform_min/4. * middle2_correction_z
+            
+            if settings.mouth_controller_create_driver:
+                self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
+            
+            #  Lower lip Constraint
             if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_floor_name])<1:
-                constr = armature.pose.bones[bone].constraints.new('FLOOR')
+                constr = armature.pose.bones[bone].constraints.new('LIMIT_DISTANCE')
                 constr.name = mouth_controller_floor_name
             else:
                 constr = armature.pose.bones[bone].constraints[mouth_controller_floor_name]
             constr.target = armature
             if mirror:
-                string_check = settings.mouth_controller_middle2_bone_L_bot[len(settings.mouth_controller_middle2_bone_L_bot)-1]
-                if string_check=="l":
-                    constr.subtarget = settings.mouth_controller_middle2_bone_L_bot[:-1]+"r"
-                elif string_check=="r":
-                    constr.subtarget = settings.mouth_controller_middle2_bone_L_bot[:-1]+"l"
-                else:
+                constr_subtarget, mirror_check = self.check_mirror(settings.mouth_controller_middle2_bone_L_bot)
+                
+                if not mirror_check:
                     self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
                     return {'FINISHED'}
+                
+                constr.subtarget = constr_subtarget
             else:
                 constr.subtarget = settings.mouth_controller_middle2_bone_R_bot
-            constr.offset = floor_offset
+            constr.distance = 0.008 * floor_correction
+            constr.limit_mode = "LIMITDIST_OUTSIDE"
+            
+            if settings.mouth_controller_create_driver:
+                self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
             
             
             # Middle bones 2 bottom
+            if settings.ms_debug:
+                print("MustardTools - Mouth Controller working on middle bones 2 bottom")
+            
             bone = settings.mouth_controller_middle2_bone_L_bot
             if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
                 constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
@@ -1355,21 +1661,56 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
             constr.target_space = "LOCAL"
             constr.owner_space = "LOCAL"
             
-            constr.from_min_x = transform_min
-            constr.map_to_z_from = "X"
-            constr.to_min_z = -transform_min * middle2_correction_x
+            if mhx:
+                constr.from_min_x = transform_min
+                constr.map_to_x_from = "X"
+                constr.to_min_x = -transform_min * middle2_correction_x
+                
+                constr.from_min_z = transform_min
+                constr.map_to_y_from = "Z"
+                constr.to_min_y = transform_min * middle2_correction_z
+            else:
+                constr.from_min_x = transform_min
+                constr.map_to_z_from = "X"
+                constr.to_min_z = -transform_min * middle2_correction_x
+                
+                constr.from_min_z = transform_min
+                constr.map_to_x_from = "Z"
+                constr.to_min_x = transform_min * middle2_correction_z
             
-            constr.from_min_z = transform_min
-            constr.map_to_x_from = "Z"
-            constr.to_min_x = transform_min * middle2_correction_z
+            if settings.mouth_controller_create_driver:
+                self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
+            
+            #  Rotation constraint
+            if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_rot_name])<1:
+                constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+                constr.name = mouth_controller_rot_name
+            else:
+                constr = armature.pose.bones[bone].constraints[mouth_controller_rot_name]
+            constr.target = armature_controller
+            constr.subtarget = controller_bone
+            constr.use_motion_extrapolate = True
+            constr.target_space = "LOCAL"
+            constr.owner_space = "LOCAL"
+            
+            constr.map_from = "ROTATION"
+            
+            constr.from_min_z_rot = 90/180*3.14
+            
+            if mhx:
+                constr.map_to_z_from = "Z"
+                constr.to_min_z = -transform_min/4. * middle2_correction_z
+            else:
+                constr.map_to_y_from = "Z"
+                constr.to_min_y = transform_min/4. * middle2_correction_z
+            
+            if settings.mouth_controller_create_driver:
+                self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
             
             if mirror:
-                string_check = settings.mouth_controller_middle2_bone_L_bot[len(settings.mouth_controller_middle2_bone_L_bot)-1]
-                if string_check=="l":
-                    bone = settings.mouth_controller_middle2_bone_L_bot[:-1]+"r"
-                elif string_check=="r":
-                    bone = settings.mouth_controller_middle2_bone_L_bot[:-1]+"l"
-                else:
+                bone, mirror_check = self.check_mirror(settings.mouth_controller_middle2_bone_L_bot)
+                
+                if not mirror_check:
                     self.report({'ERROR'}, 'MustardTools - Bones are not correctly named for Mirror option.')
                     return {'FINISHED'}
             else:
@@ -1385,15 +1726,56 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
             constr.target_space = "LOCAL"
             constr.owner_space = "LOCAL"
             
-            constr.from_min_x = -transform_min
-            constr.map_to_z_from = "X"
-            constr.to_min_z = transform_min * middle2_correction_x
+            if mhx:
+                constr.from_min_x = transform_min
+                constr.map_to_x_from = "X"
+                constr.to_min_x = transform_min * middle2_correction_x
+                
+                constr.from_min_z = transform_min
+                constr.map_to_y_from = "Z"
+                constr.to_min_y = transform_min * middle2_correction_z
+            else:
+                constr.from_min_x = transform_min
+                constr.map_to_z_from = "X"
+                constr.to_min_z = transform_min * middle2_correction_x
+                
+                constr.from_min_z = transform_min
+                constr.map_to_x_from = "Z"
+                constr.to_min_x = -transform_min * middle2_correction_z
             
-            constr.from_min_z = transform_min
-            constr.map_to_x_from = "Z"
-            constr.to_min_x = -transform_min * middle2_correction_z
-        
+            if settings.mouth_controller_create_driver:
+                self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
+            
+            #  Rotation constraint
+            if len([m for m in armature.pose.bones[bone].constraints if m.name == mouth_controller_rot_name])<1:
+                constr = armature.pose.bones[bone].constraints.new('TRANSFORM')
+                constr.name = mouth_controller_rot_name
+            else:
+                constr = armature.pose.bones[bone].constraints[mouth_controller_rot_name]
+            constr.target = armature_controller
+            constr.subtarget = controller_bone
+            constr.use_motion_extrapolate = True
+            constr.target_space = "LOCAL"
+            constr.owner_space = "LOCAL"
+            
+            constr.map_from = "ROTATION"
+            
+            constr.from_min_z_rot = 90/180*3.14
+            
+            if mhx:
+                constr.map_to_z_from = "Z"
+                constr.to_min_z = -transform_min/4. * middle2_correction_z
+            else:
+                constr.map_to_y_from = "Z"
+                constr.to_min_y = transform_min/4. * middle2_correction_z
+            
+            if settings.mouth_controller_create_driver:
+                self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
+            
         # Controller bone limits
+        if settings.ms_debug:
+            print("MustardTools - Mouth Controller adding bone limits")
+        
         bone = controller_bone
         if len([m for m in armature_controller.pose.bones[bone].constraints if m.name == mouth_controller_name])<1:
             constr = armature_controller.pose.bones[bone].constraints.new('LIMIT_LOCATION')
@@ -1440,7 +1822,6 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         # Apply custom shape
         controller_bone = armature_controller.pose.bones[bone]
         controller_bone.custom_shape = settings.mouth_controller_bone_custom_shape
-        
         
         self.report({'INFO'}, 'MustardTools - Mouth Controller successfully created.')
         
@@ -1491,6 +1872,10 @@ class MUSTARDTOOLS_OT_MouthControllerClean(bpy.types.Operator):
         controller_bone = armature_controller.pose.bones[controller_bone]
         controller_bone.custom_shape = None
         
+        mouth_controller_driver_name = "Mouth Controller Mute"
+        if hasattr(armature, '["' + mouth_controller_driver_name + '"]'):
+            del armature[mouth_controller_driver_name]
+        
         self.report({'INFO'}, 'MustardTools - '+ str(removed_constr) +' constraints successfully removed.')
         
         return {'FINISHED'}
@@ -1522,6 +1907,9 @@ class MUSTARDTOOLS_OT_MouthControllerSmartSearch(bpy.types.Operator):
             if bone.name == "c_jawbone.x":
                 convention = 1 # auto-rig
                 break
+            if bone.name == "lowerJaw":
+                convention = 2 # MHX
+                break
         
         if convention==1:
             settings.mouth_controller_mirror = True
@@ -1535,356 +1923,27 @@ class MUSTARDTOOLS_OT_MouthControllerSmartSearch(bpy.types.Operator):
             settings.mouth_controller_middle2_bone_L_top = "c_lips_top_01.r"
             settings.mouth_controller_middle2_bone_L_bot = "c_lips_bot_01.l"
             self.report({'INFO'}, 'MustardTools - Auto-rig convention used to fill properties.')
+            
+        if convention==2:
+            settings.mouth_controller_mirror = True
+            settings.mouth_controller_number_bones = 2
+            settings.mouth_controller_mhx = True
+            settings.mouth_controller_jaw_bone = "lowerJaw"
+            settings.mouth_controller_center_bone_top = "LipUpperMiddle"
+            settings.mouth_controller_center_bone_bot = "LipLowerMiddle"
+            settings.mouth_controller_edge_bone_L = "LipCorner.L"
+            settings.mouth_controller_middle1_bone_L_top = "LipUpperInner.L"
+            settings.mouth_controller_middle1_bone_L_bot = "LipLowerInner.L"
+            settings.mouth_controller_middle2_bone_L_top = "LipUpperOuter.L"
+            settings.mouth_controller_middle2_bone_L_bot = "LipLowerOuter.L"
+            settings.mouth_controller_edge_bone_correction_z = 0.8
+            self.report({'INFO'}, 'MustardTools - MHX convention used to fill properties.')    
+        
         else:
             self.report({'INFO'}, 'MustardTools - No convention found. Insert bones manually.')
         
         
         return {'FINISHED'}
-
-# ------------------------------------------------------------------------
-#    Slide Keyframes
-# ------------------------------------------------------------------------
-#
-# Slide Keyframes tool (thanks to @KDE for the idea)
-#
-# Consider the following keyframes configuration
-# A ----- B ------ C ------ D ----- E
-# Suppose I want to scale B ------ C,
-# but I want to keep the relationship from C to D as 6 frames.
-# Scaling B -> C in Blender would result in:
-# A ------ B ------------ D --- C --- E
-# This tool will scale from B to C and preserve the relations between the remaining keyframes: 
-# A ------ B --------------- C ------ D ------ E
-
-class MUSTARDTOOLS_OT_SlideKeyframes(bpy.types.Operator):
-    
-    """Tool to scale keyframes, sliding the others accordingly"""
-    bl_idname = "mustardui.anim_slidekeyframes"
-    bl_label = "Slide Keyframes"
-    bl_options = {'REGISTER','UNDO','GRAB_CURSOR','BLOCKING'}
-    
-    @classmethod
-    def poll(cls, context):
-        
-        settings = bpy.context.scene.mustardtools_settings
-        
-        if settings.slide_keyframes_application == '0':
-        
-            obj = bpy.context.active_object
-        
-            if context.active_object == None:
-                if settings.ms_debug:
-                    print("MustardTools Slide Keyframes - No object selected")
-                return False
-        
-            try:
-                action = obj.animation_data.action
-                
-                check = False
-                check_value = 0
-                    
-                for fcurve in action.fcurves:
-                    for p in fcurve.keyframe_points:
-                        if p.select_control_point:
-                            if check_value == 0:
-                                check_value = p.co[0]
-                                continue
-                            else:
-                                if p.co[0] != check_value:
-                                    check = True
-                                    break
-                
-                if not check and settings.ms_debug:
-                    print("MustardTools Slide Keyframes - The keyframe should belong to the object selected")
-                    
-                return check
-                
-            except:
-                if settings.ms_debug:
-                    print("MustardTools Slide Keyframes - No keyframes found on the object")
-                return False
-        
-        elif settings.slide_keyframes_application == '1':
-            
-            objs = bpy.context.selected_objects
-            
-            if objs == []:
-                if settings.ms_debug:
-                    print("MustardTools Slide Keyframes - No object selected")
-                return False
-            
-            check = False
-            check_value = 0
-            
-            for obj in objs:
-                
-                try:
-                    action = obj.animation_data.action
-                    
-                    for fcurve in action.fcurves:
-                        for p in fcurve.keyframe_points:
-                            if p.select_control_point:
-                                if check_value == 0:
-                                    check_value = p.co[0]
-                                    continue
-                                else:
-                                    if p.co[0] != check_value:
-                                        check = True
-                                        break
-                    
-                except:
-                    if settings.ms_debug:
-                        print("MustardTools Slide Keyframes - Object "+obj.name+" neglected. No keyframes found")
-            
-            return check
-        
-        elif settings.slide_keyframes_application == '2':
-            
-            objs = bpy.data.objects
-            
-            if objs == []:
-                if settings.ms_debug:
-                    print("MustardTools Slide Keyframes - No object in the scene")
-                return False
-            
-            for obj in objs:
-                
-                try:
-                    action = obj.animation_data.action
-                    
-                    check = False
-                    
-                    for fcurve in action.fcurves:
-                        for p in fcurve.keyframe_points:
-                            if p.select_control_point:
-                                check = True
-                                break
-                    
-                    return check
-                    
-                except:
-                    if settings.ms_debug:
-                        print("MustardTools Slide Keyframes - Object "+obj.name+" neglected. No keyframes found")
-        
-        return True
-    
-    def execute(self, context):
-        
-        settings = bpy.context.scene.mustardtools_settings
-        
-        if settings.slide_keyframes_application == '0':
-
-            obj = bpy.context.active_object
-            action = obj.animation_data.action
-        
-            self.action_end_scaled = self.value / 10.
-
-            for fcurve in action.fcurves:
-                for p in fcurve.keyframe_points:
-                    if p.co[0]>self.action_end:
-                        p.co[0] = p.co[0] + (self.action_end_scaled - self.action_end)
-            
-            if self.action_end - self.action_start > 0:
-                scale_factor = (self.action_end_scaled - self.action_end) / (self.action_end - self.action_start)
-                
-                for fcurve in action.fcurves:
-                    for p in fcurve.keyframe_points:
-                        if p.co[0]>=self.action_start and p.co[0]<=self.action_end:
-                            p.co[0] = p.co[0] + (p.co[0] - self.action_start) * scale_factor
-            else:
-                self.error = True
-            
-            self.action_end = self.action_end_scaled
-        
-        else:
-        
-            if settings.slide_keyframes_application == '1':
-                objs = bpy.context.selected_objects
-            else:
-                objs = bpy.data.objects
-            
-            self.action_end_scaled = self.value / 10.
-            
-            for obj in objs:
-                
-                try:
-                    action = obj.animation_data.action
-
-                    for fcurve in action.fcurves:
-                        for p in fcurve.keyframe_points:
-                            if p.co[0]>self.action_end:
-                                p.co[0] = p.co[0] + (self.action_end_scaled - self.action_end)
-            
-                    if self.action_end - self.action_start > 0:
-                        scale_factor = (self.action_end_scaled - self.action_end) / (self.action_end - self.action_start)
-                
-                        for fcurve in action.fcurves:
-                            for p in fcurve.keyframe_points:
-                                if p.co[0]>=self.action_start and p.co[0]<=self.action_end:
-                                    p.co[0] = p.co[0] + (p.co[0] - self.action_start) * scale_factor
-                    else:
-                        self.error = True
-                        break
-                
-                except:
-                    continue
-            
-            self.action_end = self.action_end_scaled
-        
-        return {'FINISHED'}
-    
-    def modal(self, context, event):
-        
-        settings = bpy.context.scene.mustardtools_settings
-        
-        if self.error:
-            self.report({'ERROR'}, 'MustardTools - Cannot slide those keyframes. Undo and retry.')
-            return {'CANCELLED'}
-        
-        if event.type == 'MOUSEMOVE':  # Apply
-            if (event.mouse_prev_x != event.mouse_x):
-                self.value = event.mouse_region_x
-                self.execute(context)
-        
-        elif event.type == 'LEFTMOUSE':  # Confirm
-            self.report({'INFO'}, 'MustardTools - Slide complete.')
-            if settings.ms_debug:
-                scale_factor = 1. + (self.action_end_scaled - self.init_action_end) / (self.init_action_end - self.action_start)
-                print("MustardTools Slide Keyframes - Scaling with factor " + str(scale_factor))
-            return {'FINISHED'}
-        
-        elif event.type in {'RIGHTMOUSE', 'ESC'}:  # Cancel
-            self.report({'INFO'}, 'MustardTools - Undo to cancel.')   
-            return {'CANCELLED'}
-
-        return {'RUNNING_MODAL'}
-    
-    def invoke(self, context, event):
-        
-        settings = bpy.context.scene.mustardtools_settings
-        
-        self.error = False
-        
-        self.action_start = 1048574
-        self.action_end = - 1048574
-        
-        if settings.slide_keyframes_application == '0':
-        
-            obj = bpy.context.active_object
-            action = obj.animation_data.action
-            
-            for fcurve in action.fcurves:
-                for p in fcurve.keyframe_points:
-                    if p.select_control_point and self.action_start > p.co[0]:
-                        self.action_start = p.co[0]
-                    if p.select_control_point and self.action_end < p.co[0]:
-                        self.action_end = p.co[0]
-            if settings.ms_debug:
-                print("MustardTools Slide Keyframes - Starting point found at " + str(self.action_start))
-                print("MustardTools Slide Keyframes - Ending point found at " + str(self.action_start))
-            
-            self.init_action_end = self.action_end
-            
-            self.action_end_scaled = self.action_end
-        
-        else:
-        
-            if settings.slide_keyframes_application == '1':
-                objs = bpy.context.selected_objects
-            else:
-                objs = bpy.data.objects
-            
-            for obj in objs:
-                
-                try:
-                    action = obj.animation_data.action
-                    
-                    for fcurve in action.fcurves:
-                        for p in fcurve.keyframe_points:
-                            if p.select_control_point and self.action_start > p.co[0]:
-                                self.action_start = p.co[0]
-                            if p.select_control_point and self.action_end < p.co[0]:
-                                self.action_end = p.co[0]
-                    if settings.ms_debug:
-                        print("MustardTools Slide Keyframes - Starting point found at " + str(self.action_start))
-                        print("MustardTools Slide Keyframes - Ending point found at " + str(self.action_start))
-                    
-                    self.init_action_end = self.action_end
-                    
-                    self.action_end_scaled = self.action_end
-                
-                except:
-                    if settings.ms_debug:
-                        print("MustardTools Slide Keyframes - Object "+obj.name+" neglected. No keyframes found")
-        
-        self.value = event.mouse_region_x
-        self.execute(context)
-
-        context.window_manager.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
-    
-    def draw(self, context):
-        self.layout.operator("message.messagebox", text = "message").message = 'Sample Text'
-
-# ------------------------------------------------------------------------
-#    OptiX compatibility
-# ------------------------------------------------------------------------
-
-class MUSTARDTOOLS_OT_OptiXCompatibility(bpy.types.Operator):
-    
-    """Tool to optimize the materials for OptiX renderings. The tool is non-destructive, you can revert the changes with the button in the UI"""
-    bl_idname = "mustardui.optix_compatibility"
-    bl_label = "OptiX Compatibility"
-    bl_options = {'REGISTER','UNDO'}
-    
-    revert: BoolProperty(name='Revert',
-        description="Revert restoring previous options",
-        default=False
-    )
-    
-    def execute(self, context):
-        
-        settings = bpy.context.scene.mustardtools_settings
-        
-        counter = 0
-        
-        for mat in bpy.data.materials:
-            if mat.use_nodes:
-                nodes = mat.node_tree.nodes
-                for node in nodes:
-                    if isinstance(node, bpy.types.ShaderNodeAmbientOcclusion):
-                        if settings.ms_debug:
-                            print("MustardTools - Node " + node.name + " found in material " + mat.name)
-                        node.mute = not self.revert
-                        counter = counter + 1
-                    elif isinstance(node, bpy.types.ShaderNodeBevel):
-                        if settings.ms_debug:
-                            print("MustardTools - Node " + node.name + " found in from material " + mat.name)
-                        node.mute = not self.revert
-                        counter = counter + 1
-        
-        if not self.revert and counter > 0:
-            self.report({'INFO'}, 'MustardTools - ' + str(counter) + ' nodes muted.')
-        elif self.revert and counter > 0:
-            self.report({'INFO'}, 'MustardTools - ' + str(counter) + ' nodes un-muted.')
-        else:
-            self.report({'INFO'}, 'MustardTools - No node to optimize found.')
-            
-        return {'FINISHED'}
-    
-    def draw(self, context):
-        
-        layout = self.layout
-        
-        box = layout.box()
-        if self.revert:
-            box.label(text="This tool is:", icon="ERROR")
-            box.label(text="        - Enabling AO nodes from all materials.")
-            box.label(text="        - Enabling Bevel nodes from all materials.")
-        else:
-            box.label(text="This tool is:", icon="ERROR")
-            box.label(text="        - Muting AO nodes from all materials.")
-            box.label(text="        - Muting Bevel nodes from all materials.")
 
 # ------------------------------------------------------------------------
 #    UI
@@ -1987,9 +2046,11 @@ class MUSTARDTOOLS_PT_MouthController(MainPanel, bpy.types.Panel):
         
         box.prop(settings,"mouth_controller_mirror")
         box.prop(settings,"mouth_controller_number_bones")
+        box.prop(settings,"mouth_controller_create_driver")
+        box.prop(settings,"mouth_controller_mhx")
         if settings.ms_advanced:
             box.prop(settings,"mouth_controller_transform_ratio")
-            box.prop(settings,"mouth_controller_floor_offset")
+            box.prop(settings,"mouth_controller_floor_correction")
             
             box=layout.box()
             box.label(text="Corrections", icon="SETTINGS")
@@ -2130,21 +2191,6 @@ class MUSTARDTOOLS_PT_MouthController(MainPanel, bpy.types.Panel):
         layout.separator()
         layout.operator('mustardui.mouth_controller_clean', icon="CANCEL", text="Clean")
 
-class MUSTARDTOOLS_PT_VariousTools(MainPanel, bpy.types.Panel):
-    bl_idname = "MUSTARDTOOLS_PT_VariousTools"
-    bl_label = "Additional Tools"
-    bl_options = {"DEFAULT_CLOSED"}
-    
-    def draw(self, context):
-        
-        layout = self.layout
-        settings = bpy.context.scene.mustardtools_settings
-        
-        box=layout.box()
-        row=box.row(align = True)
-        row.operator('mustardui.optix_compatibility', icon="MATERIAL").revert = False
-        row.operator('mustardui.optix_compatibility', icon="DECORATE_OVERRIDE", text="").revert = True
-
 class MUSTARDTOOLS_PT_Settings(MainPanel, bpy.types.Panel):
     bl_idname = "MUSTARDTOOLS_PT_Settings"
     bl_label = "Settings"
@@ -2159,13 +2205,6 @@ class MUSTARDTOOLS_PT_Settings(MainPanel, bpy.types.Panel):
         box.label(text="Main Settings", icon="SETTINGS")
         box.prop(settings,"ms_advanced")
         box.prop(settings,"ms_debug")
-        
-        box=layout.box()
-        box.label(text="Slide Keyframes Settings", icon="SETTINGS")
-        row=box.row()
-        row.label(text="Application")
-        row.scale_x = 2.
-        row.prop(settings,"slide_keyframes_application")
         
         box=layout.box()
         box.label(text="Objects Naming Convention",icon="OUTLINER_OB_FONT")
@@ -2190,34 +2229,20 @@ classes = (
     MUSTARDTOOLS_OT_MouthControllerSmartSearch,
     MUSTARDTOOLS_OT_MouthControllerClean,
     MUSTARDTOOLS_PT_MouthController,
-    MUSTARDTOOLS_OT_SlideKeyframes,
-    MUSTARDTOOLS_OT_OptiXCompatibility,
-    MUSTARDTOOLS_PT_VariousTools,
     MUSTARDTOOLS_PT_Settings
 )
-
-addon_keymaps = []
 
 def register():
     
     from bpy.utils import register_class
     for cls in classes:
         register_class(cls)
-        
-    wm = bpy.context.window_manager ### register the keymap
-    km = wm.keyconfigs.addon.keymaps.new(name='Dopesheet', space_type='DOPESHEET_EDITOR')
-    kmi = km.keymap_items.new(MUSTARDTOOLS_OT_SlideKeyframes.bl_idname, 'S', 'PRESS', shift=True, ctrl=False, alt=True)
-    addon_keymaps.append((km, kmi))
 
 def unregister():
     
     from bpy.utils import unregister_class
     for cls in reversed(classes):
         unregister_class(cls)
-    
-    for km, kmi in addon_keymaps:
-        km.keymap_items.remove(kmi)
-    addon_keymaps.clear()
 
 if __name__ == "__main__":
     register()
