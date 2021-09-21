@@ -5,7 +5,7 @@ bl_info = {
     "name": "Mustard Tools",
     "description": "A set of tools for riggers and animators",
     "author": "Mustard",
-    "version": (0, 2, 1),
+    "version": (0, 3, 1),
     "blender": (2, 93, 0),
     "warning": "",
     "category": "3D View",
@@ -127,6 +127,11 @@ class MustardTools_Settings(bpy.types.PropertyGroup):
                                                     description="Create a driver on the Armature object to switch on/off the mouth controller")
     mouth_controller_mhx: bpy.props.BoolProperty(name="MHX",
                                                     description="Use this option if the armature type is MHX")
+    mouth_controller_body_object: bpy.props.PointerProperty(type=bpy.types.Object,
+                                                                name="",
+                                                                description="Body mesh for limit distance modifiers.\nIf not specified, World coordinates will be used (can create problems when scaling the character)",
+                                                                poll=mustardtools_poll_mesh)
+    
     mouth_controller_edge_bone_correction_x: bpy.props.FloatProperty(default=1.0,
                                                             name="Edge bones correction (x axis)",
                                                             description="The default value can not be changed")
@@ -1210,6 +1215,10 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         constr.subtarget = settings.mouth_controller_center_bone_bot
         constr.distance = 0.015 * floor_correction
         constr.limit_mode = "LIMITDIST_OUTSIDE"
+        if settings.mouth_controller_body_object != None:
+            constr.target_space = "CUSTOM"
+            constr.owner_space = "CUSTOM"
+            constr.space_object = settings.mouth_controller_body_object
         
         if settings.mouth_controller_create_driver:
             self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
@@ -1308,6 +1317,10 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
         constr.subtarget = settings.mouth_controller_middle1_bone_L_bot
         constr.distance = 0.01 * floor_correction
         constr.limit_mode = "LIMITDIST_OUTSIDE"
+        if settings.mouth_controller_body_object != None:
+            constr.target_space = "CUSTOM"
+            constr.owner_space = "CUSTOM"
+            constr.space_object = settings.mouth_controller_body_object
         
         if settings.mouth_controller_create_driver:
             self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
@@ -1394,6 +1407,10 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
             constr.subtarget = settings.mouth_controller_middle1_bone_R_bot
         constr.distance = 0.01 * floor_correction
         constr.limit_mode = "LIMITDIST_OUTSIDE"
+        if settings.mouth_controller_body_object != None:
+            constr.target_space = "CUSTOM"
+            constr.owner_space = "CUSTOM"
+            constr.space_object = settings.mouth_controller_body_object
         
         if settings.mouth_controller_create_driver:
             self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
@@ -1551,6 +1568,10 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
             constr.subtarget = settings.mouth_controller_middle2_bone_L_bot
             constr.distance = 0.008 * floor_correction
             constr.limit_mode = "LIMITDIST_OUTSIDE"
+            if settings.mouth_controller_body_object != None:
+                constr.target_space = "CUSTOM"
+                constr.owner_space = "CUSTOM"
+                constr.space_object = settings.mouth_controller_body_object
             
             if settings.mouth_controller_create_driver:
                 self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
@@ -1640,6 +1661,10 @@ class MUSTARDTOOLS_OT_MouthController(bpy.types.Operator):
                 constr.subtarget = settings.mouth_controller_middle2_bone_R_bot
             constr.distance = 0.008 * floor_correction
             constr.limit_mode = "LIMITDIST_OUTSIDE"
+            if settings.mouth_controller_body_object != None:
+                constr.target_space = "CUSTOM"
+                constr.owner_space = "CUSTOM"
+                constr.space_object = settings.mouth_controller_body_object
             
             if settings.mouth_controller_create_driver:
                 self.add_driver(armature, constr, 'mute', mouth_controller_driver_name)
@@ -1907,8 +1932,11 @@ class MUSTARDTOOLS_OT_MouthControllerSmartSearch(bpy.types.Operator):
             if bone.name == "c_jawbone.x":
                 convention = 1 # auto-rig
                 break
-            if bone.name == "lowerJaw":
+            if bone.name == "LipCorner.L":
                 convention = 2 # MHX
+                break
+            if bone.name == "LipCorner.l":
+                convention = 3 # MHX
                 break
         
         if convention==1:
@@ -1937,7 +1965,22 @@ class MUSTARDTOOLS_OT_MouthControllerSmartSearch(bpy.types.Operator):
             settings.mouth_controller_middle2_bone_L_top = "LipUpperOuter.L"
             settings.mouth_controller_middle2_bone_L_bot = "LipLowerOuter.L"
             settings.mouth_controller_edge_bone_correction_z = 0.8
-            self.report({'INFO'}, 'MustardTools - MHX convention used to fill properties.')    
+            self.report({'INFO'}, 'MustardTools - MHX convention used to fill properties.')
+        
+        if convention==3:
+            settings.mouth_controller_mirror = True
+            settings.mouth_controller_number_bones = 2
+            settings.mouth_controller_mhx = True
+            settings.mouth_controller_jaw_bone = "lowerJaw"
+            settings.mouth_controller_center_bone_top = "LipUpperMiddle"
+            settings.mouth_controller_center_bone_bot = "LipLowerMiddle"
+            settings.mouth_controller_edge_bone_L = "LipCorner.l"
+            settings.mouth_controller_middle1_bone_L_top = "LipUpperInner.l"
+            settings.mouth_controller_middle1_bone_L_bot = "LipLowerInner.l"
+            settings.mouth_controller_middle2_bone_L_top = "LipUpperOuter.l"
+            settings.mouth_controller_middle2_bone_L_bot = "LipLowerOuter.l"
+            settings.mouth_controller_edge_bone_correction_z = 0.8
+            self.report({'INFO'}, 'MustardTools - MHX convention used to fill properties.') 
         
         else:
             self.report({'INFO'}, 'MustardTools - No convention found. Insert bones manually.')
@@ -2105,6 +2148,11 @@ class MUSTARDTOOLS_PT_MouthController(MainPanel, bpy.types.Panel):
         row.label(text="Armature")
         row.scale_x = row_scale
         row.prop(settings,"mouth_controller_armature", text="")
+        
+        row=box.row()
+        row.label(text="Body Object")
+        row.scale_x = row_scale
+        row.prop(settings,"mouth_controller_body_object", text="")
         
         if settings.mouth_controller_armature != None:
             
