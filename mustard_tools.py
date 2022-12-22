@@ -5,7 +5,7 @@ bl_info = {
     "name": "Mustard Tools",
     "description": "A set of tools for riggers and animators",
     "author": "Mustard",
-    "version": (0, 3, 1),
+    "version": (0, 4, 0),
     "blender": (2, 93, 0),
     "warning": "",
     "category": "3D View",
