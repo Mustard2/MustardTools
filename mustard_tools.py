@@ -5,8 +5,8 @@ bl_info = {
     "name": "Mustard Tools",
     "description": "A set of tools for riggers and animators",
     "author": "Mustard",
-    "version": (0, 4, 0),
-    "blender": (2, 93, 0),
+    "version": (0, 5, 0),
+    "blender": (3, 5, 0),
     "warning": "",
     "category": "3D View",
 }
@@ -191,14 +191,15 @@ class MustardTools_Settings(bpy.types.PropertyGroup):
     mouth_controller_middle2_bone_R_bot: bpy.props.StringProperty(name="Middle 2 Bottom R",description="In the case of more than one middle bone, the Middle 2 should be the one far from the center bone")
     mouth_controller_jaw_bone: bpy.props.StringProperty(name="Jaw")
     
-    # Slide Keyframes Tool definitions
+    # Merge Images To Grayscale Tool definitions
     # UI definitions
-    slide_keyframes_application: bpy.props.EnumProperty(name = "",
-                                                        description = "Which object's keyframes are considered by the Slide Keyframes tool",
-                                                            items = [('0','Active','Consider the active object only'), 
-                                                                    ('1','Selected','Consider all the selected objects'),
-                                                                    ('2','All','Consider all objects in the scene')],
-                                                            default = '0')
+    merge_images_to_grayscale_substitute_nodes: bpy.props.BoolProperty(name = "Substitute Nodes",
+                                                    default = True,
+                                                    description = "Substitute nodes with the new image")
+    merge_images_to_grayscale_separator: bpy.props.StringProperty(name="Separator",
+                                                    default = "_",
+                                                    description="Separation character for new image name")
+    
 
 bpy.utils.register_class(MustardTools_Settings)
 
@@ -1989,6 +1990,185 @@ class MUSTARDTOOLS_OT_MouthControllerSmartSearch(bpy.types.Operator):
         return {'FINISHED'}
 
 # ------------------------------------------------------------------------
+#    Merge Images To Grayscale
+# ------------------------------------------------------------------------
+
+class MUSTARDTOOLS_OT_MergeImagesToGrayscale(bpy.types.Operator):
+    """Merge 3 images to a grayscale image.\nThe new image is saved to the textures folder"""
+    bl_idname = "mustardui.merge_images_to_grayscale"
+    bl_label = "Merge Images"
+    bl_options = {'REGISTER','UNDO'}
+    
+    @classmethod
+    def poll(cls, context):
+        
+        settings = bpy.context.scene.mustardtools_settings
+        active_material = bpy.context.active_object.active_material.name
+        nodes = bpy.data.materials[active_material].node_tree.nodes
+        links = bpy.data.materials[active_material].node_tree.links
+        
+        # Check if the selected nodes are images
+        selected_images = []
+        for n in nodes:
+            if n.select and n.type=="TEX_IMAGE":
+                selected_images.append(n)
+        
+        # And discard if you don't have 3
+        if len(selected_images) != 3:
+            return False
+        
+        return True
+
+    def execute(self, context):
+        
+        settings = bpy.context.scene.mustardtools_settings
+        
+        def check_cv2():
+    
+            try:
+                import cv2
+                return True
+         
+            except:
+                
+                try:
+                    
+                    import subprocess
+                    import sys
+                    
+                    # path to python.exe
+                    python_exe = os.path.join(sys.prefix, 'bin', 'python.exe')
+                     
+                    # upgrade pip
+                    subprocess.call([python_exe, "-m", "ensurepip"])
+                    subprocess.call([python_exe, "-m", "pip", "install", "--upgrade", "pip"])
+                     
+                    # install required packages
+                    subprocess.call([python_exe, "-m", "pip", "install", "opencv-python"])
+                    
+                    return True
+                except:
+                    return False
+            
+            return False
+
+        def import_image(name):
+            
+            import cv2
+            return cv2.imread(name, cv2.IMREAD_GRAYSCALE)
+
+        def merge_and_export_image(r, g, b, output_name = "output.png"):
+            
+            import cv2
+            
+            def check_ratio(r, g, b):
+                
+                ratios = [r.shape[1]/r.shape[0], g.shape[1]/g.shape[0], b.shape[1]/b.shape[0]]
+                
+                return ratios[0] == ratios[1] and ratios[0] == ratios[2] and ratios[1] == ratios[2]
+            
+            def find_min_dim(r, g, b):
+                return [min([r.shape[0], g.shape[0], b.shape[0]]),min([r.shape[1], g.shape[1], b.shape[1]])]
+            
+            def check_shape_and_resize(img, min_dims):
+                
+                if img.shape[0] > min_dims[0] or img.shape[1] > min_dims[1]:
+                    return cv2.resize(img, (min_dim_x, min_dim_y), interpolation = cv2.INTER_AREA)
+                
+                return img
+            
+            # Check if the ratios of the images are the same
+            if not check_ratio(r,g,b):
+                return False, None
+            
+            # Find minimum dimension and eventually reshape
+            min_dims = find_min_dim(r, g, b)
+            r = check_shape_and_resize(r, min_dims)
+            g = check_shape_and_resize(g, min_dims)
+            b = check_shape_and_resize(b, min_dims)
+            
+            # Merge images into RGB
+            rgb = cv2.merge((r,g,b))
+            
+            # Check if the textures folder is already created and eventually create one
+            try:
+                os.mkdir('textures')
+            except:
+                pass
+            
+            # Write the final image
+            cv2.imwrite("textures\\"+ output_name, rgb)
+            
+            return True, rgb
+
+        def find_and_create_link(links, from_node, new_from_node_output):
+            
+            for l in links:
+                if l.from_node == from_node:
+                    links.new(new_from_node_output, l.to_socket)
+                    return True
+            
+            return False
+        
+        # Check active material on active object
+        active_material = bpy.context.active_object.active_material.name
+        nodes = bpy.data.materials[active_material].node_tree.nodes
+        links = bpy.data.materials[active_material].node_tree.links
+        
+        # Check if the selected nodes are images
+        selected_images = []
+        for n in nodes:
+            if n.select and n.type=="TEX_IMAGE":
+                selected_images.append(n)
+        
+        if not check_cv2():
+            self.report({'ERROR'}, 'MustardTools - Can not find or download CV2 for Python.')
+            return 2
+        
+        import cv2
+        
+        # Import the images from the nodes
+        r = import_image(selected_images[0].image.filepath[2:])
+        g = import_image(selected_images[1].image.filepath[2:])
+        b = import_image(selected_images[2].image.filepath[2:])
+        
+        # Choose export file name
+        sep = settings.merge_images_to_grayscale_separator
+        image_name = selected_images[0].image.name + sep + selected_images[1].image.name + sep + selected_images[2].image.name + ".png"
+        
+        # Merge and export
+        res, img = merge_and_export_image(r,g,b, output_name = image_name)
+        if not res:
+            self.report({'ERROR'}, 'MustardTools - Image merge failed.')
+            return 3
+        
+        if settings.merge_images_to_grayscale_substitute_nodes:
+            # Create new node
+            img_node = nodes.new('ShaderNodeTexImage')
+            img_node.location = ((selected_images[0].location[0] + selected_images[1].location[0] + selected_images[2].location[0])/3,
+                             (selected_images[0].location[1] + selected_images[1].location[1] + selected_images[2].location[1])/3)  
+            imported_image = bpy.data.images.load("//textures/" + image_name)
+            img_node.image = imported_image
+            
+            # Create Separate RGB node
+            sep_node = nodes.new('ShaderNodeSeparateColor')
+            sep_node.location = (img_node.location[0] + 300, img_node.location[1])
+            
+            # Create link to new image to Separate RGB node
+            links.new(img_node.outputs["Color"], sep_node.inputs["Color"])
+            # Try to restore old nodes links
+            find_and_create_link(links, selected_images[0], sep_node.outputs[0])
+            find_and_create_link(links, selected_images[1], sep_node.outputs[1])
+            find_and_create_link(links, selected_images[2], sep_node.outputs[2])
+            
+            # Remove old nodes
+            for n in selected_images:
+                nodes.remove(n)
+        
+        self.report({'INFO'}, 'MustardTools - Images merged.') 
+        return {'FINISHED'}
+
+# ------------------------------------------------------------------------
 #    UI
 # ------------------------------------------------------------------------
 
@@ -2239,6 +2419,23 @@ class MUSTARDTOOLS_PT_MouthController(MainPanel, bpy.types.Panel):
         layout.separator()
         layout.operator('mustardui.mouth_controller_clean', icon="CANCEL", text="Clean")
 
+
+class MUSTARDTOOLS_PT_MergeImagesToGrayscale(MainPanel, bpy.types.Panel):
+    bl_idname = "MUSTARDTOOLS_PT_MergeImagesToGrayscale"
+    bl_label = "Merge Images To Grayscale"
+
+    def draw(self, context):
+        
+        layout = self.layout
+        settings = bpy.context.scene.mustardtools_settings
+        
+        box=layout.box()
+        box.label(text="Main settings", icon="OUTLINER_OB_IMAGE")
+        box.prop(settings,"merge_images_to_grayscale_substitute_nodes")
+        box.prop(settings,"merge_images_to_grayscale_separator")
+        
+        layout.operator('mustardui.merge_images_to_grayscale', icon="ADD")
+
 class MUSTARDTOOLS_PT_Settings(MainPanel, bpy.types.Panel):
     bl_idname = "MUSTARDTOOLS_PT_Settings"
     bl_label = "Settings"
@@ -2277,6 +2474,8 @@ classes = (
     MUSTARDTOOLS_OT_MouthControllerSmartSearch,
     MUSTARDTOOLS_OT_MouthControllerClean,
     MUSTARDTOOLS_PT_MouthController,
+    MUSTARDTOOLS_OT_MergeImagesToGrayscale,
+    MUSTARDTOOLS_PT_MergeImagesToGrayscale,
     MUSTARDTOOLS_PT_Settings
 )
 
