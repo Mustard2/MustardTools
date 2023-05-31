@@ -8,8 +8,8 @@ This is an addon with some tools for riggers and animators. It's still in early 
 
 - IK constraint generation for bone chains (with possible automatic creation of controller and pole bones)
 - IK Spline rig generation for bone chains
-- possibility to add bendy bones for both functions above
-- mouth controller (for quicker mouth poses) generator
+- Mouth controller (for quicker mouth poses) generator
+- Tool to merge 3 images into a single RGB image (to decrease memory allocation by a factor of 3)
 
 ## Instructions
 
