@@ -2003,7 +2003,12 @@ class MUSTARDTOOLS_OT_MergeImagesToGrayscale(bpy.types.Operator):
     def poll(cls, context):
         
         settings = bpy.context.scene.mustardtools_settings
-        active_material = bpy.context.active_object.active_material.name
+        
+        if bpy.context.active_object.active_material != None:
+            active_material = bpy.context.active_object.active_material.name
+        else:
+            return False
+        
         nodes = bpy.data.materials[active_material].node_tree.nodes
         links = bpy.data.materials[active_material].node_tree.links
         
